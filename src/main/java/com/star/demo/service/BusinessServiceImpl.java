@@ -4,11 +4,13 @@ package com.star.demo.service;
 import com.star.demo.model.Quote;
 import org.springframework.stereotype.Component;
 import com.star.demo.repository.DbServiceRepository;
+import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.List;
 
-@Component
+
+@Service(value = "businessService")
 public class BusinessServiceImpl implements BusinessService {
 
     @Resource
