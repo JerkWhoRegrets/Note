@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 public interface BusinessService {
-    List<Quote> findByUsername(String username);
+    List<Quote> findByName(String username);
 
     Quote save(Quote quote);
 }

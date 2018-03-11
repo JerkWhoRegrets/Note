@@ -10,5 +10,5 @@ import java.util.List;
 public interface DbServiceRepository extends JpaRepository<Quote,Integer> {
 
 
-    List<Quote> findByUsername(String username);
+    List<Quote> findByName(String username);
 }

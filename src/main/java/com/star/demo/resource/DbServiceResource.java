@@ -29,7 +29,7 @@ public class DbServiceResource {
     }
 
     private List<String> getQuotesByUsername(@PathVariable("username") String username) {
-        return businessService.findByUsername(username)
+        return businessService.findByName(username)
                 .stream()
                 .map(Quote::getQuote)
                 .collect(Collectors.toList());

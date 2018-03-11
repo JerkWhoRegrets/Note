@@ -22,7 +22,7 @@ public class BusinessServiceImpl implements BusinessService {
 //            throw new RuntimeException("username cannot be null or empty");
 //        }
 
-        return dbServiceRepository.findByUsername(username);
+        return dbServiceRepository.findByName(username);
     }
 
     @Override
