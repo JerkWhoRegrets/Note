@@ -1,6 +1,6 @@
-package repository;
+package com.star.demo.repository;
 
-import model.Quote;
+import com.star.demo.model.Quote;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

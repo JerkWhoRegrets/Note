@@ -1,10 +1,9 @@
-package service;
+package com.star.demo.service;
 
 
-import model.Quote;
+import com.star.demo.model.Quote;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
-import repository.DbServiceRepository;
+import com.star.demo.repository.DbServiceRepository;
 
 import javax.annotation.Resource;
 import java.util.List;

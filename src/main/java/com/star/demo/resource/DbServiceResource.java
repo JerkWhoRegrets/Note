@@ -1,11 +1,11 @@
-package resource;
+package com.star.demo.resource;
 
 
-import model.Quote;
-import model.Quotes;
+import com.star.demo.model.Quote;
+import com.star.demo.model.Quotes;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
-import service.BusinessService;
+import com.star.demo.service.BusinessService;
 
 import javax.annotation.Resource;
 import java.util.Collections;

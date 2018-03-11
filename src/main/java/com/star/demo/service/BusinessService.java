@@ -1,7 +1,6 @@
-package service;
+package com.star.demo.service;
 
-import com.sun.org.apache.xpath.internal.operations.Quo;
-import model.Quote;
+import com.star.demo.model.Quote;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
