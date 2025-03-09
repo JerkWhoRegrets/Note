@@ -7,18 +7,22 @@
 - Why do we propose using incrementing primary key? Avoid B+ tree breaking nodes too often.
 
 # Transaction ACID
-- Atomicity, during the process of a transaction, either all the operations are finised or none of thme have been done.
-- Consistency, The transctions only make changes to the table in a pre-defiined, predictable way. The transaction should make no changes that violate the rules or constraints placed on the data.
+- Atomicity, during the process of a transaction, either all the operations are finised or none of them have been done.
+- Consistency, The transctions only make changes to the table in a pre-defined, predictable way. The transaction should make no changes that violate the rules or constraints placed on the data.
 - Isolation, transactions should be isolated and should not be affected by other transactions.
 - Durable, the changes made by the transaction should be permanant, even there is a fail-over in the system.
 
 # Isolation level
 ## Issues
 - Lost Update, One transaction has overrtten the changes done by another transaction
-- Dirty Reads, One transaction have read some data changed but not commited by another transaction. E.g. first fetch the name is 'Bob', and another transaction changes the name to 'Alice', then second fetch the name becomes 'Alice' and deduct 50# from 'Alice's account, but after the transaction is commited, another transaction has rolledback the transaction.
+- Dirty Reads, One transaction have read some data changed but not commited by another transaction. E.g. transaction A first fetches a record of id = 1 and balance = 500, and another transaction B changes the balace of the same record to 200, then A transaction fetches the same record and deducts 50# and commited the change, after which Transaction A rollbacked the change.
 - Non-repeatable Reads, Inside a transaction, if it performs two reads at different time, response has changed, e.g. A transaction has fetched one record with name equal to 'Bob', later on, another transaction has commited a transaction which has changed the record to 'Alice', and A transaction tries to fetch the same record, ending the same record value has changed from 'Bob' to 'Alice', even the 'Read Commited' level cannot resolve this issue.
-- Phantom Reads, A transaction has fetched some data commited by B transaction
+- Phantom Reads, A transaction fetches some records based on certain criteria, such as amount > 400, at first query, the record size is 30, after which another transaction B has inserted one record with amount setting to 500 and has commited. If transaction A performs the same query, 31 records will be dispalyed.
 - Read uncommited
-- Read commited
-- Repeatable read
-- Serialiable
+- Read commited can solve Dirty reads and lower level
+- Repeatable read can solve non-repeatable reads and lower level.
+- Serialiable can solve all.
+
+# MVCC
+For REPEATABLE_READ isolation level, read view will only be created once at first query inside a transaction.
+For READ_COMMITED isolation level, read view will be created at for each query inside a transaction.
