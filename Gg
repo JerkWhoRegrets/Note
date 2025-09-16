@@ -1,0 +1,658 @@
+import java.io.*;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+
+/**
+ * AdvancedTaskScheduler
+ *
+ * A robust, single-class scheduler for scheduling Runnable tasks with:
+ *  - Delays, fixed-rate, fixed-delay scheduling
+ *  - Simple cron-like recurring schedule (minute/hour/day)
+ *  - Task dependencies (task waits for other tasks to finish successfully)
+ *  - Retry with exponential backoff
+ *  - Persistence to disk (serializes the scheduled task meta, not the Runnable itself)
+ *  - Graceful shutdown
+ *  - Listener hooks & metrics
+ *
+ * Notes:
+ *  - This class serializes TaskMetadata for persistence; it does NOT serialize user-provided Runnable
+ *    instances (they may be reattached at runtime via a map). This avoids Java serialization of closures.
+ *  - For persistence to restore execution across restarts, the user should register Runnables by id
+ *    before calling restoreFromPersistence().
+ *
+ * Example usage:
+ *  AdvancedTaskScheduler scheduler = new AdvancedTaskScheduler("tasks.db", 4);
+ *  scheduler.registerRunnable("hello", () -> System.out.println("Hello world"));
+ *  String id = scheduler.scheduleAtFixedRate("hello", Duration.ofSeconds(5), Duration.ofSeconds(10), null);
+ *  ...
+ *  scheduler.shutdownGracefully();
+ */
+public class AdvancedTaskScheduler implements Closeable {
+
+    /* *************** PUBLIC CONFIGURATION / TYPES *************** */
+
+    public enum RecurrenceType { NONE, FIXED_RATE, FIXED_DELAY, CRON_SIMPLE }
+
+    public static class ScheduleResult {
+        public final String taskId;
+        public final boolean scheduled;
+
+        public ScheduleResult(String taskId, boolean scheduled) {
+            this.taskId = taskId;
+            this.scheduled = scheduled;
+        }
+    }
+
+    /**
+     * Backoff policy simple config
+     */
+    public static class RetryPolicy implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public final int maxAttempts;
+        public final long initialDelayMillis;
+        public final double multiplier;
+
+        public RetryPolicy(int maxAttempts, long initialDelayMillis, double multiplier) {
+            this.maxAttempts = Math.max(1, maxAttempts);
+            this.initialDelayMillis = Math.max(0, initialDelayMillis);
+            this.multiplier = Math.max(1.0, multiplier);
+        }
+
+        public static RetryPolicy none() {
+            return new RetryPolicy(1, 0, 1.0);
+        }
+
+        public static RetryPolicy exponential(int attempts, long initialDelayMillis) {
+            return new RetryPolicy(attempts, initialDelayMillis, 2.0);
+        }
+    }
+
+    /* *************** TASK METADATA (serializable) *************** */
+
+    /**
+     * Task metadata persisted to disk (does NOT contain the Runnable)
+     */
+    public static class TaskMetadata implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public final String id;
+        public final RecurrenceType recurrenceType;
+        public final long initialDelayMillis;
+        public final long periodMillis; // for fixed rate/delay or cron caches interval
+        public final String cronExpression; // simple cron
+        public final String runnableId; // id used to reattach the runnable at runtime
+        public final Set<String> dependsOn;
+        public final RetryPolicy retryPolicy;
+        public final Instant createdAt;
+        public final boolean enabled;
+
+        public TaskMetadata(String id, RecurrenceType recurrenceType, long initialDelayMillis,
+                            long periodMillis, String cronExpression, String runnableId,
+                            Set<String> dependsOn, RetryPolicy retryPolicy, Instant createdAt, boolean enabled) {
+            this.id = id;
+            this.recurrenceType = recurrenceType;
+            this.initialDelayMillis = initialDelayMillis;
+            this.periodMillis = periodMillis;
+            this.cronExpression = cronExpression;
+            this.runnableId = runnableId;
+            this.dependsOn = (dependsOn == null) ? Collections.emptySet() : new HashSet<>(dependsOn);
+            this.retryPolicy = (retryPolicy == null) ? RetryPolicy.none() : retryPolicy;
+            this.createdAt = createdAt;
+            this.enabled = enabled;
+        }
+    }
+
+    /* *************** INTERNAL CLASSES *************** */
+
+    private static class ScheduledTaskHolder {
+        final TaskMetadata meta;
+        volatile ScheduledFuture<?> future;
+        volatile int lastAttemptCount;
+        volatile boolean lastRunSuccessful;
+        volatile Instant lastRunAt;
+
+        ScheduledTaskHolder(TaskMetadata meta) {
+            this.meta = meta;
+            this.lastAttemptCount = 0;
+            this.lastRunSuccessful = false;
+        }
+    }
+
+    /* *************** FIELDS *************** */
+
+    private final ScheduledThreadPoolExecutor scheduler;
+    private final ExecutorService executor; // for actual task runs (so scheduling thread doesn't block)
+    private final Map<String, Runnable> runnableRegistry = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledTaskHolder> tasks = new ConcurrentHashMap<>();
+    private final File persistenceFile;
+    private final Object persistenceLock = new Object();
+    private volatile boolean running = true;
+
+    // Event listeners
+    private final List<Consumer<TaskEvent>> listeners = Collections.synchronizedList(new ArrayList<>());
+
+    // Simple metrics
+    private final AtomicInteger totalScheduled = new AtomicInteger(0);
+    private final AtomicInteger totalExecuted = new AtomicInteger(0);
+    private final AtomicInteger totalSucceeded = new AtomicInteger(0);
+    private final AtomicInteger totalFailed = new AtomicInteger(0);
+
+    /* *************** EVENTS *************** */
+
+    public static class TaskEvent {
+        public final String taskId;
+        public final EventType type;
+        public final String message;
+        public final Instant at;
+
+        public enum EventType { SCHEDULED, RUN_STARTED, RUN_SUCCEEDED, RUN_FAILED, CANCELLED, RESTORED }
+
+        public TaskEvent(String taskId, EventType type, String message, Instant at) {
+            this.taskId = taskId;
+            this.type = type;
+            this.message = message;
+            this.at = at;
+        }
+    }
+
+    /* *************** CONSTRUCTORS *************** */
+
+    /**
+     * Create a scheduler with given persistence path and worker thread count.
+     *
+     * @param persistencePath file path where metadata will be stored (if null, persistence disabled)
+     * @param workerThreads   number of workers for executing runnables
+     */
+    public AdvancedTaskScheduler(String persistencePath, int workerThreads) {
+        this.persistenceFile = (persistencePath == null) ? null : new File(persistencePath);
+        this.scheduler = new ScheduledThreadPoolExecutor(Math.max(1, workerThreads));
+        this.scheduler.setRemoveOnCancelPolicy(true);
+        this.executor = Executors.newFixedThreadPool(Math.max(1, workerThreads));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                shutdownGracefully();
+            } catch (Exception ignored) {}
+        }));
+    }
+
+    public AdvancedTaskScheduler(String persistencePath) {
+        this(persistencePath, Runtime.getRuntime().availableProcessors());
+    }
+
+    public AdvancedTaskScheduler() {
+        this(null, Runtime.getRuntime().availableProcessors());
+    }
+
+    /* *************** PUBLIC API: registration & listeners *************** */
+
+    /**
+     * Register a runnable with a stable id so it can be referenced by TaskMetadata and persisted metadata.
+     * Note: the runnable itself is NOT serialized. After restart, register the runnable under the same id before
+     * calling restoreFromPersistence().
+     *
+     * @param id       stable id for this runnable
+     * @param runnable the executable
+     */
+    public void registerRunnable(String id, Runnable runnable) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(runnable, "runnable");
+        runnableRegistry.put(id, runnable);
+    }
+
+    public void unregisterRunnable(String id) {
+        runnableRegistry.remove(id);
+    }
+
+    public void addListener(Consumer<TaskEvent> listener) {
+        listeners.add(listener);
+    }
+
+    public void removeListener(Consumer<TaskEvent> listener) {
+        listeners.remove(listener);
+    }
+
+    /* *************** SCHEDULING SHORTCUTS *************** */
+
+    public String scheduleOneShot(String runnableId, Duration delay, Set<String> dependsOn, RetryPolicy retryPolicy) {
+        return scheduleInternal(runnableId, RecurrenceType.NONE,
+                (delay == null) ? 0 : delay.toMillis(), 0, null, dependsOn, retryPolicy);
+    }
+
+    public String scheduleAtFixedRate(String runnableId, Duration initialDelay, Duration period, Set<String> dependsOn) {
+        return scheduleInternal(runnableId, RecurrenceType.FIXED_RATE,
+                (initialDelay == null) ? 0 : initialDelay.toMillis(),
+                (period == null) ? 0 : period.toMillis(), null, dependsOn, null);
+    }
+
+    public String scheduleWithFixedDelay(String runnableId, Duration initialDelay, Duration delayBetweenRuns, Set<String> dependsOn) {
+        return scheduleInternal(runnableId, RecurrenceType.FIXED_DELAY,
+                (initialDelay == null) ? 0 : initialDelay.toMillis(),
+                (delayBetweenRuns == null) ? 0 : delayBetweenRuns.toMillis(), null, dependsOn, null);
+    }
+
+    /**
+     * Simple cron scheduler (VERY simple): supports fields minute hour day (wildcards '*' and single numbers).
+     * Example: "*/5 * *" - every 5 minutes; "0 3 *" - 03:00 daily; "30 14 *" - 14:30 daily.
+     *
+     * Note: This cron is intentionally limited and used to compute next run times.
+     */
+    public String scheduleCronSimple(String runnableId, String cronExpression, Set<String> dependsOn) {
+        return scheduleInternal(runnableId, RecurrenceType.CRON_SIMPLE,
+                0, 0, cronExpression, dependsOn, null);
+    }
+
+    /* *************** CORE SCHEDULING *************** */
+
+    private String scheduleInternal(String runnableId, RecurrenceType recurrenceType,
+                                    long initialDelayMillis, long periodMillis, String cronExpression,
+                                    Set<String> dependsOn, RetryPolicy retryPolicy) {
+        Objects.requireNonNull(runnableId, "runnableId");
+        if (!running) throw new IllegalStateException("Scheduler is closed");
+        String id = UUID.randomUUID().toString();
+        TaskMetadata meta = new TaskMetadata(id, recurrenceType, initialDelayMillis, periodMillis,
+                cronExpression, runnableId, dependsOn, retryPolicy, Instant.now(), true);
+        ScheduledTaskHolder holder = new ScheduledTaskHolder(meta);
+        tasks.put(id, holder);
+        scheduleHolder(holder);
+        totalScheduled.incrementAndGet();
+        persist();
+        fireEvent(new TaskEvent(id, TaskEvent.EventType.SCHEDULED, "Task scheduled", Instant.now()));
+        return id;
+    }
+
+    private void scheduleHolder(ScheduledTaskHolder holder) {
+        TaskMetadata meta = holder.meta;
+        Runnable runner = () -> runTask(holder);
+        switch (meta.recurrenceType) {
+            case NONE:
+                holder.future = scheduler.schedule(wrapWithDependencyAndRetry(holder, runner),
+                        meta.initialDelayMillis, TimeUnit.MILLISECONDS);
+                break;
+            case FIXED_RATE:
+                holder.future = scheduler.scheduleAtFixedRate(wrapWithDependencyAndRetry(holder, runner),
+                        meta.initialDelayMillis, meta.periodMillis, TimeUnit.MILLISECONDS);
+                break;
+            case FIXED_DELAY:
+                holder.future = scheduler.scheduleWithFixedDelay(wrapWithDependencyAndRetry(holder, runner),
+                        meta.initialDelayMillis, meta.periodMillis, TimeUnit.MILLISECONDS);
+                break;
+            case CRON_SIMPLE:
+                // For simple cron, schedule a one-shot that reschedules itself after computing next run
+                long delay = computeDelayForSimpleCron(meta.cronExpression);
+                holder.future = scheduler.schedule(wrapWithDependencyAndRetry(holder, () -> {
+                    try {
+                        runner.run();
+                    } finally {
+                        // reschedule next occurrence
+                        if (tasks.containsKey(meta.id) && meta.enabled) {
+                            scheduleHolder(holder);
+                        }
+                    }
+                }), delay, TimeUnit.MILLISECONDS);
+                break;
+            default:
+                throw new IllegalStateException("Unknown recurrence type: " + meta.recurrenceType);
+        }
+    }
+
+    private Runnable wrapWithDependencyAndRetry(ScheduledTaskHolder holder, Runnable runnable) {
+        return () -> {
+            // wait for dependencies
+            if (!waitForDependencies(holder.meta.dependsOn, 30, TimeUnit.SECONDS)) {
+                // dependencies didn't satisfy in reasonable time; mark failed
+                fireEvent(new TaskEvent(holder.meta.id, TaskEvent.EventType.RUN_FAILED,
+                        "Dependency wait timeout", Instant.now()));
+                totalFailed.incrementAndGet();
+                return;
+            }
+            // run using executor so scheduling threads are free
+            executor.submit(() -> {
+                fireEvent(new TaskEvent(holder.meta.id, TaskEvent.EventType.RUN_STARTED, "Run started", Instant.now()));
+                holder.lastAttemptCount++;
+                totalExecuted.incrementAndGet();
+                try {
+                    runnable.run();
+                    holder.lastRunSuccessful = true;
+                    holder.lastRunAt = Instant.now();
+                    totalSucceeded.incrementAndGet();
+                    fireEvent(new TaskEvent(holder.meta.id, TaskEvent.EventType.RUN_SUCCEEDED, "Run succeeded", Instant.now()));
+                } catch (Throwable t) {
+                    holder.lastRunSuccessful = false;
+                    holder.lastRunAt = Instant.now();
+                    totalFailed.incrementAndGet();
+                    fireEvent(new TaskEvent(holder.meta.id, TaskEvent.EventType.RUN_FAILED, "Exception: " + t.getMessage(), Instant.now()));
+                    handleRetryIfNeeded(holder, runnable, t);
+                } finally {
+                    persist(); // persist run metadata occasionally
+                }
+            });
+        };
+    }
+
+    private boolean waitForDependencies(Set<String> deps, long timeout, TimeUnit unit) {
+        if (deps == null || deps.isEmpty()) return true;
+        long deadline = System.nanoTime() + unit.toNanos(timeout);
+        for (String dep : deps) {
+            ScheduledTaskHolder h;
+            while (true) {
+                h = tasks.get(dep);
+                if (h == null) {
+                    // dependency doesn't exist; treat as failure
+                    return false;
+                }
+                if (h.lastRunSuccessful) break; // dependency satisfied
+                if (System.nanoTime() > deadline) return false;
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void handleRetryIfNeeded(ScheduledTaskHolder holder, Runnable runnable, Throwable failure) {
+        RetryPolicy policy = holder.meta.retryPolicy;
+        if (policy == null) return;
+        int attemptsSoFar = holder.lastAttemptCount;
+        if (attemptsSoFar >= policy.maxAttempts) {
+            // exhausted
+            return;
+        }
+        long delay = policy.initialDelayMillis;
+        for (int i = 1; i < attemptsSoFar; i++) {
+            delay = (long) (delay * policy.multiplier);
+        }
+        // schedule single retry (does not count as recurrence)
+        if (running) {
+            ScheduledFuture<?> retryFuture = scheduler.schedule(() -> {
+                executor.submit(() -> {
+                    try {
+                        runnable.run();
+                        holder.lastRunSuccessful = true;
+                        holder.lastRunAt = Instant.now();
+                        totalSucceeded.incrementAndGet();
+                        fireEvent(new TaskEvent(holder.meta.id, TaskEvent.EventType.RUN_SUCCEEDED, "Retry succeeded", Instant.now()));
+                    } catch (Throwable t) {
+                        holder.lastRunSuccessful = false;
+                        holder.lastRunAt = Instant.now();
+                        totalFailed.incrementAndGet();
+                        fireEvent(new TaskEvent(holder.meta.id, TaskEvent.EventType.RUN_FAILED, "Retry failed: " + t.getMessage(), Instant.now()));
+                        handleRetryIfNeeded(holder, runnable, t);
+                    } finally {
+                        persist();
+                    }
+                });
+            }, delay, TimeUnit.MILLISECONDS);
+            holder.future = retryFuture;
+        }
+    }
+
+    /**
+     * Run task invoked by scheduler - this attaches the user-provided Runnable by id before executing.
+     */
+    private void runTask(ScheduledTaskHolder holder) {
+        TaskMetadata meta = holder.meta;
+        Runnable r = runnableRegistry.get(meta.runnableId);
+        if (r == null) {
+            // nothing registered — fire failed event
+            fireEvent(new TaskEvent(meta.id, TaskEvent.EventType.RUN_FAILED, "Runnable not registered: " + meta.runnableId, Instant.now()));
+            totalFailed.incrementAndGet();
+            return;
+        }
+        // invoke the runnable directly (wrapped by wrapWithDependencyAndRetry which hands it to executor)
+        r.run();
+    }
+
+    /* *************** PERSISTENCE *************** */
+
+    private void persist() {
+        if (persistenceFile == null) return;
+        synchronized (persistenceLock) {
+            try {
+                List<TaskMetadata> list = new ArrayList<>();
+                for (ScheduledTaskHolder h : tasks.values()) {
+                    list.add(h.meta);
+                }
+                try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(persistenceFile))) {
+                    oos.writeObject(list);
+                    oos.flush();
+                }
+            } catch (IOException e) {
+                // best-effort persistence; log to stderr
+                System.err.println("AdvancedTaskScheduler: failed to persist metadata: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Restore persisted task metadata. Must register runnables (registerRunnable) for runnableIds before calling this.
+     */
+    @SuppressWarnings("unchecked")
+    public void restoreFromPersistence() {
+        if (persistenceFile == null || !persistenceFile.exists()) return;
+        synchronized (persistenceLock) {
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(persistenceFile))) {
+                Object o = ois.readObject();
+                if (o instanceof List) {
+                    List<TaskMetadata> list = (List<TaskMetadata>) o;
+                    for (TaskMetadata meta : list) {
+                        ScheduledTaskHolder holder = new ScheduledTaskHolder(meta);
+                        tasks.put(meta.id, holder);
+                        // only schedule if enabled
+                        if (meta.enabled) {
+                            scheduleHolder(holder);
+                            fireEvent(new TaskEvent(meta.id, TaskEvent.EventType.RESTORED, "Restored from disk", Instant.now()));
+                        }
+                    }
+                }
+            } catch (IOException | ClassNotFoundException e) {
+                System.err.println("AdvancedTaskScheduler: failed to restore: " + e.getMessage());
+            }
+        }
+    }
+
+    /* *************** UTIL: SIMPLE CRON PARSER *************** */
+
+    /**
+     * Very simple cron evaluator: supports expressions "min hour day", each field:
+     *  - "*" : every unit
+     *  - "*/n": every n units (only for minute)
+     *  - single integer
+     *
+     * Returns delay in ms from now until next match.
+     */
+    private long computeDelayForSimpleCron(String expr) {
+        try {
+            final Instant now = Instant.now();
+            final ZonedDateTime znow = ZonedDateTime.ofInstant(now, ZoneId.systemDefault());
+            String[] parts = (expr == null ? "" : expr.trim()).split("\\s+");
+            if (parts.length < 3) {
+                // fallback: run in 1 minute
+                return TimeUnit.MINUTES.toMillis(1);
+            }
+            int minute = -1, hour = -1, day = -1;
+            String pMin = parts[0], pHour = parts[1], pDay = parts[2];
+            // compute candidate times in next 48 hours and find first match
+            for (int addMinutes = 0; addMinutes <= 48 * 60; addMinutes++) {
+                ZonedDateTime candidate = znow.plusMinutes(addMinutes);
+                if (!matchesField(candidate.getMinute(), pMin)) continue;
+                if (!matchesField(candidate.getHour(), pHour)) continue;
+                if (!matchesField(candidate.getDayOfMonth(), pDay)) continue;
+                long millis = Duration.between(now, candidate.toInstant()).toMillis();
+                return Math.max(0, millis);
+            }
+        } catch (Exception e) {
+            // fallback
+        }
+        return TimeUnit.MINUTES.toMillis(1);
+    }
+
+    private boolean matchesField(int value, String token) {
+        if (token.equals("*")) return true;
+        if (token.startsWith("*/")) {
+            try {
+                int n = Integer.parseInt(token.substring(2));
+                return (value % n) == 0;
+            } catch (NumberFormatException ignore) {
+                return false;
+            }
+        }
+        try {
+            int v = Integer.parseInt(token);
+            return v == value;
+        } catch (NumberFormatException ignore) {
+            return false;
+        }
+    }
+
+    /* *************** TASK MANAGEMENT *************** */
+
+    public boolean cancelTask(String id, boolean mayInterruptIfRunning) {
+        ScheduledTaskHolder holder = tasks.remove(id);
+        if (holder == null) return false;
+        if (holder.future != null) {
+            holder.future.cancel(mayInterruptIfRunning);
+        }
+        fireEvent(new TaskEvent(id, TaskEvent.EventType.CANCELLED, "Cancelled by user", Instant.now()));
+        persist();
+        return true;
+    }
+
+    public Optional<TaskMetadata> getTaskMetadata(String id) {
+        ScheduledTaskHolder h = tasks.get(id);
+        return (h == null) ? Optional.empty() : Optional.of(h.meta);
+    }
+
+    public Map<String, TaskMetadata> listTaskMetadata() {
+        Map<String, TaskMetadata> map = new HashMap<>();
+        for (Map.Entry<String, ScheduledTaskHolder> e : tasks.entrySet()) {
+            map.put(e.getKey(), e.getValue().meta);
+        }
+        return map;
+    }
+
+    public Map<String, Object> metricsSnapshot() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("totalScheduled", totalScheduled.get());
+        m.put("totalExecuted", totalExecuted.get());
+        m.put("totalSucceeded", totalSucceeded.get());
+        m.put("totalFailed", totalFailed.get());
+        m.put("activeTasks", tasks.size());
+        m.put("executorPoolSize", getExecutorPoolSize());
+        return m;
+    }
+
+    private int getExecutorPoolSize() {
+        if (executor instanceof ThreadPoolExecutor) {
+            return ((ThreadPoolExecutor) executor).getPoolSize();
+        }
+        return -1;
+    }
+
+    /* *************** SHUTDOWN *************** */
+
+    /**
+     * Graceful shutdown: stop accepting new schedules, wait for running tasks to finish, persist state.
+     */
+    public void shutdownGracefully() {
+        if (!running) return;
+        running = false;
+        try {
+            // stop scheduling new runs
+            scheduler.shutdown();
+            // request executor termination
+            executor.shutdown();
+            // await termination
+            scheduler.awaitTermination(10, TimeUnit.SECONDS);
+            executor.awaitTermination(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            persist();
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        shutdownGracefully();
+    }
+
+    /* *************** HELPERS & EVENTS *************** */
+
+    private void fireEvent(TaskEvent event) {
+        // copy to avoid concurrent modification
+        List<Consumer<TaskEvent>> copy;
+        synchronized (listeners) {
+            copy = new ArrayList<>(listeners);
+        }
+        for (Consumer<TaskEvent> l : copy) {
+            try {
+                l.accept(event);
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    /* *************** MAIN (example) *************** */
+
+    /**
+     * Example demonstration (not unit tests): run three tasks with dependencies, retry, and cron.
+     *
+     * Run:
+     *   java AdvancedTaskScheduler
+     */
+    public static void main(String[] args) throws Exception {
+        AdvancedTaskScheduler s = new AdvancedTaskScheduler("ats.db", 4);
+
+        // Register runnables
+        s.registerRunnable("taskA", () -> {
+            System.out.println(now() + " [taskA] running - will succeed");
+        });
+
+        s.registerRunnable("taskB", () -> {
+            System.out.println(now() + " [taskB] running - will fail first time");
+            // simulate occasional failure
+            if (Math.random() < 0.8) throw new RuntimeException("simulated failure");
+            System.out.println(now() + " [taskB] recovered");
+        });
+
+        s.registerRunnable("taskC", () -> {
+            System.out.println(now() + " [taskC] running after A and B succeed");
+        });
+
+        // Add a listener for events
+        s.addListener(evt -> System.out.println(now() + " [EVENT] " + evt.type + " " + evt.taskId + " " + evt.message));
+
+        // Schedule tasks
+        String idA = s.scheduleOneShot("taskA", Duration.ofSeconds(2), null, null);
+        String idB = s.scheduleOneShot("taskB", Duration.ofSeconds(3), null, RetryPolicy.exponential(4, 1000));
+        Set<String> deps = new HashSet<>(Arrays.asList(idA, idB));
+        String idC = s.scheduleOneShot("taskC", Duration.ofSeconds(5), deps, null);
+
+        // Schedule a recurring job every 10 seconds after initial 5 seconds
+        s.registerRunnable("ticker", () -> System.out.println(now() + " [ticker] tick"));
+        s.scheduleAtFixedRate("ticker", Duration.ofSeconds(5), Duration.ofSeconds(10), null);
+
+        // Simple cron: every minute at second 0 and specified minute pattern "*/1 * *" (every minute)
+        s.registerRunnable("cronMinute", () -> System.out.println(now() + " [cronMinute] cron run"));
+        s.scheduleCronSimple("cronMinute", "*/1 * *", null);
+
+        // Let it run for a while, print metrics occasionally
+        for (int i = 0; i < 6; i++) {
+            Thread.sleep(10000);
+            System.out.println(now() + " METRICS: " + s.metricsSnapshot());
+        }
+
+        System.out.println(now() + " shutting down...");
+        s.shutdownGracefully();
+    }
+
+    private static String now() {
+        return DateTimeFormatter.ISO_LOCAL_TIME.format(LocalTime.now());
+    }
+}
