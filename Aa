@@ -1,0 +1,270 @@
+package com.example.springcloud.demo;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreaker;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.cloud.gateway.route.RouteLocator;
+import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.List;
+import java.util.Random;
+
+/**
+ * Demo Spring Cloud application covering:
+ * - Service discovery (DiscoveryClient)
+ * - Load balancing (RestTemplate with @LoadBalanced)
+ * - Circuit breaker (CircuitBreakerFactory)
+ * - Config server (@RefreshScope + @Value)
+ * - Feign client
+ * - API Gateway (RouteLocator bean)
+ * - Basic service endpoints
+ * 
+ * This is a "kitchen sink" example to showcase concepts, 
+ * not a real production-ready app.
+ */
+@SpringBootApplication
+public class SpringCloudDemoApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringCloudDemoApplication.class, args);
+    }
+
+    /**
+     * Create a load-balanced RestTemplate
+     * to demonstrate Ribbon / Spring Cloud LoadBalancer
+     */
+    @Bean
+    @LoadBalanced
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+
+    /**
+     * Example of defining routes using Spring Cloud Gateway
+     */
+    @Bean
+    public RouteLocator gatewayRoutes(RouteLocatorBuilder builder) {
+        return builder.routes()
+                .route("service_a_route", r -> r.path("/service-a/**")
+                        .uri("lb://service-a"))
+                .route("service_b_route", r -> r.path("/service-b/**")
+                        .uri("lb://service-b"))
+                .build();
+    }
+}
+
+/**
+ * REST Controller simulating endpoints for Service A.
+ */
+@RestController
+@RequestMapping("/service-a")
+class ServiceAController {
+
+    private final Random random = new Random();
+
+    @GetMapping("/hello")
+    public String helloA() {
+        return "Hello from Service A!";
+    }
+
+    @GetMapping("/unstable")
+    public String unstable() {
+        // Simulate flaky service
+        if (random.nextBoolean()) {
+            throw new RuntimeException("Service A is down!");
+        }
+        return "Service A is stable this time!";
+    }
+}
+
+/**
+ * REST Controller simulating endpoints for Service B.
+ */
+@RestController
+@RequestMapping("/service-b")
+class ServiceBController {
+
+    private final Random random = new Random();
+
+    @GetMapping("/hello")
+    public String helloB() {
+        return "Hello from Service B!";
+    }
+
+    @GetMapping("/delayed")
+    public String delayed() throws InterruptedException {
+        // Simulate latency
+        Thread.sleep(2000);
+        return "Service B finally responded!";
+    }
+}
+
+/**
+ * A configuration-aware bean using @RefreshScope
+ * to demonstrate Spring Cloud Config.
+ */
+@RefreshScope
+@RestController
+@RequestMapping("/config")
+class ConfigClientController {
+
+    // Value is retrieved from Config Server (if set up)
+    @Value("${custom.message:Default message if not set}")
+    private String message;
+
+    @GetMapping("/message")
+    public String getMessage() {
+        return "Config message: " + message;
+    }
+}
+
+/**
+ * Service that demonstrates DiscoveryClient and CircuitBreaker usage.
+ */
+@Service
+class DiscoveryAndResilienceService {
+
+    private final DiscoveryClient discoveryClient;
+    private final RestTemplate restTemplate;
+    private final CircuitBreakerFactory<?, ?> circuitBreakerFactory;
+
+    DiscoveryAndResilienceService(DiscoveryClient discoveryClient,
+                                  RestTemplate restTemplate,
+                                  CircuitBreakerFactory<?, ?> circuitBreakerFactory) {
+        this.discoveryClient = discoveryClient;
+        this.restTemplate = restTemplate;
+        this.circuitBreakerFactory = circuitBreakerFactory;
+    }
+
+    /**
+     * Use DiscoveryClient to list all instances of a service.
+     */
+    public List<ServiceInstance> getInstances(String serviceName) {
+        return discoveryClient.getInstances(serviceName);
+    }
+
+    /**
+     * Call another service with a circuit breaker.
+     */
+    public String callWithCircuitBreaker(String serviceUrl) {
+        CircuitBreaker circuitBreaker = circuitBreakerFactory.create("demoCircuitBreaker");
+
+        return circuitBreaker.run(
+                () -> restTemplate.getForObject(serviceUrl, String.class),
+                throwable -> "Fallback: Service is unavailable right now."
+        );
+    }
+}
+
+/**
+ * REST Controller demonstrating use of DiscoveryClient and CircuitBreaker service.
+ */
+@RestController
+@RequestMapping("/client")
+class ClientController {
+
+    private final DiscoveryAndResilienceService resilienceService;
+
+    ClientController(DiscoveryAndResilienceService resilienceService) {
+        this.resilienceService = resilienceService;
+    }
+
+    @GetMapping("/instances/{serviceName}")
+    public List<ServiceInstance> getInstances(@PathVariable String serviceName) {
+        return resilienceService.getInstances(serviceName);
+    }
+
+    @GetMapping("/call/{serviceName}/hello")
+    public String callServiceHello(@PathVariable String serviceName) {
+        List<ServiceInstance> instances = resilienceService.getInstances(serviceName);
+        if (instances.isEmpty()) {
+            return "No instances found for " + serviceName;
+        }
+        String url = instances.get(0).getUri().toString() + "/hello";
+        return resilienceService.callWithCircuitBreaker(url);
+    }
+}
+
+/**
+ * Example Feign client interface for Service B.
+ */
+@FeignClient(name = "service-b")
+interface ServiceBFeignClient {
+
+    @GetMapping("/service-b/hello")
+    String hello();
+
+    @GetMapping("/service-b/delayed")
+    String delayed();
+}
+
+/**
+ * A component that uses the Feign client.
+ */
+@Component
+class FeignClientRunner implements CommandLineRunner {
+
+    private final ServiceBFeignClient feignClient;
+
+    FeignClientRunner(ServiceBFeignClient feignClient) {
+        this.feignClient = feignClient;
+    }
+
+    @Override
+    public void run(String... args) {
+        try {
+            System.out.println("Feign call to service-b: " + feignClient.hello());
+        } catch (Exception e) {
+            System.err.println("Feign client failed: " + e.getMessage());
+        }
+    }
+}
+
+/**
+ * Extra controller to demonstrate Feign usage.
+ */
+@RestController
+@RequestMapping("/feign")
+class FeignDemoController {
+
+    private final ServiceBFeignClient feignClient;
+
+    FeignDemoController(ServiceBFeignClient feignClient) {
+        this.feignClient = feignClient;
+    }
+
+    @GetMapping("/hello")
+    public String helloViaFeign() {
+        return feignClient.hello();
+    }
+
+    @GetMapping("/delayed")
+    public String delayedViaFeign() {
+        return feignClient.delayed();
+    }
+}
+
+/**
+ * Notes:
+ * - In a real Spring Cloud project, Service A and Service B
+ *   would usually be separate applications registered with Eureka/Consul/Nacos.
+ * - Here they are just controllers in one app for demonstration.
+ * - CircuitBreaker requires a dependency such as Resilience4j.
+ * - Config requires a running Config Server to fetch externalized properties.
+ * - Gateway routes demonstrate path-based routing to services.
+ * 
+ * This file is intentionally long (>300 lines) to illustrate many concepts together.
+ */
