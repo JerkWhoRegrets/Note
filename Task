@@ -1,0 +1,274 @@
+import java.io.*;
+import java.time.LocalDate;
+import java.util.*;
+
+/**
+ * A simple Task Management System
+ * Demonstrates OOP, enums, collections, file I/O, and CLI interaction.
+ */
+public class TaskManagerApp {
+
+    // Enum for Task Priority
+    enum Priority {
+        LOW, MEDIUM, HIGH
+    }
+
+    // Enum for Task Status
+    enum Status {
+        TODO, IN_PROGRESS, DONE
+    }
+
+    // Task class
+    static class Task implements Serializable {
+        private static final long serialVersionUID = 1L;
+        private final int id;
+        private String title;
+        private String description;
+        private LocalDate dueDate;
+        private Priority priority;
+        private Status status;
+
+        public Task(int id, String title, String description, LocalDate dueDate, Priority priority) {
+            this.id = id;
+            this.title = title;
+            this.description = description;
+            this.dueDate = dueDate;
+            this.priority = priority;
+            this.status = Status.TODO;
+        }
+
+        public int getId() {
+            return id;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public void setTitle(String title) {
+            this.title = title;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public void setDescription(String description) {
+            this.description = description;
+        }
+
+        public LocalDate getDueDate() {
+            return dueDate;
+        }
+
+        public void setDueDate(LocalDate dueDate) {
+            this.dueDate = dueDate;
+        }
+
+        public Priority getPriority() {
+            return priority;
+        }
+
+        public void setPriority(Priority priority) {
+            this.priority = priority;
+        }
+
+        public Status getStatus() {
+            return status;
+        }
+
+        public void setStatus(Status status) {
+            this.status = status;
+        }
+
+        @Override
+        public String toString() {
+            return String.format(
+                "ID: %d | Title: %s | Desc: %s | Due: %s | Priority: %s | Status: %s",
+                id, title, description, dueDate, priority, status
+            );
+        }
+    }
+
+    // Manager class
+    static class TaskManager {
+        private final Map<Integer, Task> tasks = new HashMap<>();
+        private int idCounter = 1;
+
+        public Task createTask(String title, String desc, LocalDate due, Priority priority) {
+            Task t = new Task(idCounter++, title, desc, due, priority);
+            tasks.put(t.getId(), t);
+            return t;
+        }
+
+        public Task getTask(int id) {
+            return tasks.get(id);
+        }
+
+        public List<Task> getAllTasks() {
+            return new ArrayList<>(tasks.values());
+        }
+
+        public boolean deleteTask(int id) {
+            return tasks.remove(id) != null;
+        }
+
+        public void saveToFile(String filename) {
+            try (ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(filename))) {
+                out.writeObject(tasks);
+                out.writeInt(idCounter);
+            } catch (IOException e) {
+                System.out.println("Error saving: " + e.getMessage());
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        public void loadFromFile(String filename) {
+            File f = new File(filename);
+            if (!f.exists()) return;
+            try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(filename))) {
+                Map<Integer, Task> loaded = (Map<Integer, Task>) in.readObject();
+                tasks.clear();
+                tasks.putAll(loaded);
+                idCounter = in.readInt();
+            } catch (IOException | ClassNotFoundException e) {
+                System.out.println("Error loading: " + e.getMessage());
+            }
+        }
+    }
+
+    // CLI
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        TaskManager manager = new TaskManager();
+        String filename = "tasks.dat";
+
+        manager.loadFromFile(filename);
+        boolean running = true;
+
+        while (running) {
+            System.out.println("\n===== Task Manager =====");
+            System.out.println("1. Create Task");
+            System.out.println("2. View All Tasks");
+            System.out.println("3. Update Task");
+            System.out.println("4. Delete Task");
+            System.out.println("5. Save & Exit");
+            System.out.print("Choose: ");
+
+            String choice = scanner.nextLine();
+
+            switch (choice) {
+                case "1":
+                    System.out.print("Title: ");
+                    String title = scanner.nextLine();
+                    System.out.print("Description: ");
+                    String desc = scanner.nextLine();
+                    System.out.print("Due date (YYYY-MM-DD): ");
+                    String dateStr = scanner.nextLine();
+                    LocalDate date;
+                    try {
+                        date = LocalDate.parse(dateStr);
+                    } catch (Exception e) {
+                        System.out.println("Invalid date, using today.");
+                        date = LocalDate.now();
+                    }
+                    System.out.print("Priority (LOW/MEDIUM/HIGH): ");
+                    String pStr = scanner.nextLine().toUpperCase();
+                    Priority priority;
+                    try {
+                        priority = Priority.valueOf(pStr);
+                    } catch (Exception e) {
+                        priority = Priority.MEDIUM;
+                    }
+                    Task newTask = manager.createTask(title, desc, date, priority);
+                    System.out.println("Created: " + newTask);
+                    break;
+
+                case "2":
+                    List<Task> all = manager.getAllTasks();
+                    if (all.isEmpty()) {
+                        System.out.println("No tasks found.");
+                    } else {
+                        all.forEach(System.out::println);
+                    }
+                    break;
+
+                case "3":
+                    System.out.print("Enter task ID: ");
+                    int idToUpdate;
+                    try {
+                        idToUpdate = Integer.parseInt(scanner.nextLine());
+                    } catch (Exception e) {
+                        System.out.println("Invalid ID.");
+                        break;
+                    }
+                    Task task = manager.getTask(idToUpdate);
+                    if (task == null) {
+                        System.out.println("Not found.");
+                        break;
+                    }
+                    System.out.println("Updating: " + task);
+                    System.out.print("New title (blank to skip): ");
+                    String newTitle = scanner.nextLine();
+                    if (!newTitle.isEmpty()) task.setTitle(newTitle);
+                    System.out.print("New description (blank to skip): ");
+                    String newDesc = scanner.nextLine();
+                    if (!newDesc.isEmpty()) task.setDescription(newDesc);
+                    System.out.print("New due date (YYYY-MM-DD or blank): ");
+                    String newDateStr = scanner.nextLine();
+                    if (!newDateStr.isEmpty()) {
+                        try {
+                            task.setDueDate(LocalDate.parse(newDateStr));
+                        } catch (Exception e) {
+                            System.out.println("Invalid date ignored.");
+                        }
+                    }
+                    System.out.print("New priority (LOW/MEDIUM/HIGH or blank): ");
+                    String newPrStr = scanner.nextLine();
+                    if (!newPrStr.isEmpty()) {
+                        try {
+                            task.setPriority(Priority.valueOf(newPrStr.toUpperCase()));
+                        } catch (Exception e) {
+                            System.out.println("Invalid priority ignored.");
+                        }
+                    }
+                    System.out.print("New status (TODO/IN_PROGRESS/DONE or blank): ");
+                    String newStatusStr = scanner.nextLine();
+                    if (!newStatusStr.isEmpty()) {
+                        try {
+                            task.setStatus(Status.valueOf(newStatusStr.toUpperCase()));
+                        } catch (Exception e) {
+                            System.out.println("Invalid status ignored.");
+                        }
+                    }
+                    System.out.println("Updated: " + task);
+                    break;
+
+                case "4":
+                    System.out.print("Enter task ID to delete: ");
+                    try {
+                        int delId = Integer.parseInt(scanner.nextLine());
+                        if (manager.deleteTask(delId)) {
+                            System.out.println("Deleted.");
+                        } else {
+                            System.out.println("Task not found.");
+                        }
+                    } catch (Exception e) {
+                        System.out.println("Invalid ID.");
+                    }
+                    break;
+
+                case "5":
+                    manager.saveToFile(filename);
+                    running = false;
+                    System.out.println("Tasks saved. Goodbye!");
+                    break;
+
+                default:
+                    System.out.println("Invalid choice.");
+            }
+        }
+
+        scanner.close();
+    }
+}
