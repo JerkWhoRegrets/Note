@@ -1,0 +1,221 @@
+import java.time.LocalDateTime;
+import java.util.*;
+
+/**
+ * Bank Account Management System
+ * Demonstrates OOP, collections, enums, and console-based menu interaction.
+ */
+public class BankApp {
+
+    // Enum for transaction types
+    enum TxType {
+        DEPOSIT, WITHDRAW, TRANSFER
+    }
+
+    // Transaction record
+    static class Transaction {
+        private final TxType type;
+        private final double amount;
+        private final LocalDateTime timestamp;
+        private final String note;
+
+        public Transaction(TxType type, double amount, String note) {
+            this.type = type;
+            this.amount = amount;
+            this.timestamp = LocalDateTime.now();
+            this.note = note;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("[%s] %s: %.2f (%s)", timestamp, type, amount, note);
+        }
+    }
+
+    // Bank Account
+    static class Account {
+        private final int id;
+        private String owner;
+        private double balance;
+        private List<Transaction> history = new ArrayList<>();
+
+        public Account(int id, String owner) {
+            this.id = id;
+            this.owner = owner;
+            this.balance = 0.0;
+        }
+
+        public int getId() { return id; }
+        public String getOwner() { return owner; }
+        public double getBalance() { return balance; }
+        public List<Transaction> getHistory() { return history; }
+
+        public void deposit(double amt) {
+            balance += amt;
+            history.add(new Transaction(TxType.DEPOSIT, amt, "Deposit"));
+        }
+
+        public boolean withdraw(double amt) {
+            if (amt <= balance) {
+                balance -= amt;
+                history.add(new Transaction(TxType.WITHDRAW, amt, "Withdraw"));
+                return true;
+            }
+            return false;
+        }
+
+        public boolean transfer(Account target, double amt) {
+            if (amt <= balance) {
+                balance -= amt;
+                target.balance += amt;
+                history.add(new Transaction(TxType.TRANSFER, amt, "To " + target.getOwner()));
+                target.history.add(new Transaction(TxType.TRANSFER, amt, "From " + this.getOwner()));
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("Account %d | Owner: %s | Balance: %.2f", id, owner, balance);
+        }
+    }
+
+    // Bank class
+    static class Bank {
+        private Map<Integer, Account> accounts = new HashMap<>();
+        private int counter = 1;
+
+        public Account createAccount(String owner) {
+            Account acc = new Account(counter++, owner);
+            accounts.put(acc.getId(), acc);
+            return acc;
+        }
+
+        public Account findAccount(int id) {
+            return accounts.get(id);
+        }
+
+        public List<Account> listAccounts() {
+            return new ArrayList<>(accounts.values());
+        }
+    }
+
+    // Console Interface
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        Bank bank = new Bank();
+        boolean running = true;
+
+        while (running) {
+            System.out.println("\n===== Bank Menu =====");
+            System.out.println("1. Create Account");
+            System.out.println("2. Deposit");
+            System.out.println("3. Withdraw");
+            System.out.println("4. Transfer");
+            System.out.println("5. View Account");
+            System.out.println("6. View All Accounts");
+            System.out.println("7. View Transactions");
+            System.out.println("0. Exit");
+            System.out.print("Choose: ");
+
+            String choice = sc.nextLine();
+
+            switch (choice) {
+                case "1":
+                    System.out.print("Owner name: ");
+                    String owner = sc.nextLine();
+                    Account acc = bank.createAccount(owner);
+                    System.out.println("Created: " + acc);
+                    break;
+
+                case "2":
+                    System.out.print("Account ID: ");
+                    int idd = Integer.parseInt(sc.nextLine());
+                    Account a2 = bank.findAccount(idd);
+                    if (a2 == null) {
+                        System.out.println("Not found.");
+                        break;
+                    }
+                    System.out.print("Amount: ");
+                    double dep = Double.parseDouble(sc.nextLine());
+                    a2.deposit(dep);
+                    System.out.println("Deposited. New balance: " + a2.getBalance());
+                    break;
+
+                case "3":
+                    System.out.print("Account ID: ");
+                    int idw = Integer.parseInt(sc.nextLine());
+                    Account a3 = bank.findAccount(idw);
+                    if (a3 == null) {
+                        System.out.println("Not found.");
+                        break;
+                    }
+                    System.out.print("Amount: ");
+                    double wd = Double.parseDouble(sc.nextLine());
+                    if (a3.withdraw(wd)) {
+                        System.out.println("Withdrawn. New balance: " + a3.getBalance());
+                    } else {
+                        System.out.println("Insufficient funds.");
+                    }
+                    break;
+
+                case "4":
+                    System.out.print("From Account ID: ");
+                    int idf = Integer.parseInt(sc.nextLine());
+                    System.out.print("To Account ID: ");
+                    int idt = Integer.parseInt(sc.nextLine());
+                    System.out.print("Amount: ");
+                    double amt = Double.parseDouble(sc.nextLine());
+                    Account from = bank.findAccount(idf);
+                    Account to = bank.findAccount(idt);
+                    if (from == null || to == null) {
+                        System.out.println("Invalid accounts.");
+                        break;
+                    }
+                    if (from.transfer(to, amt)) {
+                        System.out.println("Transfer successful.");
+                    } else {
+                        System.out.println("Transfer failed. Insufficient funds.");
+                    }
+                    break;
+
+                case "5":
+                    System.out.print("Account ID: ");
+                    int idv = Integer.parseInt(sc.nextLine());
+                    Account a5 = bank.findAccount(idv);
+                    if (a5 == null) {
+                        System.out.println("Not found.");
+                    } else {
+                        System.out.println(a5);
+                    }
+                    break;
+
+                case "6":
+                    bank.listAccounts().forEach(System.out::println);
+                    break;
+
+                case "7":
+                    System.out.print("Account ID: ");
+                    int idt2 = Integer.parseInt(sc.nextLine());
+                    Account a7 = bank.findAccount(idt2);
+                    if (a7 == null) {
+                        System.out.println("Not found.");
+                    } else {
+                        a7.getHistory().forEach(System.out::println);
+                    }
+                    break;
+
+                case "0":
+                    running = false;
+                    System.out.println("Goodbye!");
+                    break;
+
+                default:
+                    System.out.println("Invalid choice.");
+            }
+        }
+
+        sc.close();
+    }
+}
