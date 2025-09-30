@@ -1,0 +1,179 @@
+import java.util.*;
+import java.util.concurrent.*;
+
+/**
+ * Multithreaded Task Simulator
+ * Demonstrates threads, executors, synchronization, and concurrency utilities.
+ */
+public class ThreadDemoApp {
+
+    // --- Shared progress tracker ---
+    static class ProgressTracker {
+        private int progress = 0;
+
+        public synchronized void increment(int amount) {
+            progress += amount;
+            if (progress > 100) progress = 100;
+        }
+
+        public synchronized int getProgress() {
+            return progress;
+        }
+    }
+
+    // --- Task base class ---
+    static abstract class Task implements Runnable {
+        protected String name;
+        protected ProgressTracker tracker;
+
+        public Task(String name, ProgressTracker tracker) {
+            this.name = name;
+            this.tracker = tracker;
+        }
+
+        protected void simulateWork(int steps, int delay) {
+            for (int i = 0; i < steps; i++) {
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                tracker.increment(100 / steps);
+                System.out.printf("[%s] Step %d/%d, Progress: %d%%%n",
+                        name, i + 1, steps, tracker.getProgress());
+            }
+        }
+    }
+
+    // --- Download task ---
+    static class DownloadTask extends Task {
+        public DownloadTask(String name, ProgressTracker tracker) {
+            super(name, tracker);
+        }
+        @Override
+        public void run() {
+            System.out.println("Starting download: " + name);
+            simulateWork(10, 300);
+            System.out.println("Download finished: " + name);
+        }
+    }
+
+    // --- Computation task ---
+    static class ComputeTask extends Task {
+        private int number;
+        public ComputeTask(String name, ProgressTracker tracker, int number) {
+            super(name, tracker);
+            this.number = number;
+        }
+        @Override
+        public void run() {
+            System.out.println("Starting computation: " + name);
+            long result = 1;
+            for (int i = 1; i <= number; i++) {
+                result *= i;
+                tracker.increment(1);
+                try { Thread.sleep(100); } catch (InterruptedException e) {}
+            }
+            System.out.printf("Computation %s finished. Factorial(%d) = %d%n", name, number, result);
+        }
+    }
+
+    // --- Logger task ---
+    static class LoggerTask extends Task {
+        public LoggerTask(String name, ProgressTracker tracker) {
+            super(name, tracker);
+        }
+        @Override
+        public void run() {
+            System.out.println("Logger started: " + name);
+            for (int i = 0; i < 5; i++) {
+                System.out.printf("[%s] Log entry %d%n", name, i + 1);
+                tracker.increment(5);
+                try { Thread.sleep(400); } catch (InterruptedException e) {}
+            }
+            System.out.println("Logger finished: " + name);
+        }
+    }
+
+    // --- Menu UI ---
+    static class Menu {
+        private ExecutorService executor = Executors.newFixedThreadPool(4);
+        private Scanner sc = new Scanner(System.in);
+        private List<Future<?>> runningTasks = new ArrayList<>();
+
+        public void run() {
+            while (true) {
+                System.out.println("\n=== Multithreaded Task Simulator ===");
+                System.out.println("1. Start Download Task");
+                System.out.println("2. Start Computation Task");
+                System.out.println("3. Start Logger Task");
+                System.out.println("4. View Running Tasks");
+                System.out.println("0. Exit");
+                System.out.print("Choose: ");
+                String choice = sc.nextLine();
+
+                switch (choice) {
+                    case "1": startDownload(); break;
+                    case "2": startComputation(); break;
+                    case "3": startLogger(); break;
+                    case "4": showRunning(); break;
+                    case "0":
+                        shutdown();
+                        return;
+                    default:
+                        System.out.println("Invalid option.");
+                }
+            }
+        }
+
+        private void startDownload() {
+            ProgressTracker tracker = new ProgressTracker();
+            DownloadTask task = new DownloadTask("Download-" + (runningTasks.size() + 1), tracker);
+            Future<?> f = executor.submit(task);
+            runningTasks.add(f);
+            System.out.println("Download task started.");
+        }
+
+        private void startComputation() {
+            System.out.print("Enter number to compute factorial: ");
+            int num = Integer.parseInt(sc.nextLine());
+            ProgressTracker tracker = new ProgressTracker();
+            ComputeTask task = new ComputeTask("Compute-" + (runningTasks.size() + 1), tracker, num);
+            Future<?> f = executor.submit(task);
+            runningTasks.add(f);
+            System.out.println("Computation task started.");
+        }
+
+        private void startLogger() {
+            ProgressTracker tracker = new ProgressTracker();
+            LoggerTask task = new LoggerTask("Logger-" + (runningTasks.size() + 1), tracker);
+            Future<?> f = executor.submit(task);
+            runningTasks.add(f);
+            System.out.println("Logger task started.");
+        }
+
+        private void showRunning() {
+            int count = 0;
+            for (Future<?> f : runningTasks) {
+                if (!f.isDone()) count++;
+            }
+            System.out.println("Currently running tasks: " + count);
+        }
+
+        private void shutdown() {
+            executor.shutdown();
+            System.out.println("Shutting down...");
+            try {
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        new Menu().run();
+    }
+}
