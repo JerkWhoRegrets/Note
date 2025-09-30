@@ -1,0 +1,164 @@
+import java.util.*;
+import java.util.concurrent.*;
+
+/**
+ * Producer-Consumer Simulation
+ * Demonstrates multithreading with BlockingQueue.
+ */
+public class ProducerConsumerApp {
+
+    // --- Shared Data Structure ---
+    private static final BlockingQueue<String> queue = new LinkedBlockingQueue<>(10);
+
+    // --- Producer ---
+    static class Producer implements Runnable {
+        private final String name;
+        private final Random rand = new Random();
+
+        public Producer(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public void run() {
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    String item = "Item-" + rand.nextInt(1000);
+                    queue.put(item);
+                    System.out.printf("[%s] Produced: %s | Queue size: %d%n",
+                            name, item, queue.size());
+                    Thread.sleep(rand.nextInt(500) + 200);
+                }
+            } catch (InterruptedException e) {
+                System.out.printf("[%s] Producer stopped.%n", name);
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    // --- Consumer ---
+    static class Consumer implements Runnable {
+        private final String name;
+
+        public Consumer(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public void run() {
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    String item = queue.take();
+                    System.out.printf("[%s] Consumed: %s | Queue size: %d%n",
+                            name, item, queue.size());
+                    Thread.sleep(400);
+                }
+            } catch (InterruptedException e) {
+                System.out.printf("[%s] Consumer stopped.%n", name);
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    // --- Manager for threads ---
+    static class Manager {
+        private final Map<String, Thread> producers = new ConcurrentHashMap<>();
+        private final Map<String, Thread> consumers = new ConcurrentHashMap<>();
+        private int producerCount = 0;
+        private int consumerCount = 0;
+
+        public void startProducer() {
+            producerCount++;
+            String name = "Producer-" + producerCount;
+            Thread t = new Thread(new Producer(name));
+            producers.put(name, t);
+            t.start();
+            System.out.println(name + " started.");
+        }
+
+        public void startConsumer() {
+            consumerCount++;
+            String name = "Consumer-" + consumerCount;
+            Thread t = new Thread(new Consumer(name));
+            consumers.put(name, t);
+            t.start();
+            System.out.println(name + " started.");
+        }
+
+        public void stopProducer(String name) {
+            Thread t = producers.remove(name);
+            if (t != null) {
+                t.interrupt();
+                System.out.println(name + " stopped.");
+            } else {
+                System.out.println("No such producer running.");
+            }
+        }
+
+        public void stopConsumer(String name) {
+            Thread t = consumers.remove(name);
+            if (t != null) {
+                t.interrupt();
+                System.out.println(name + " stopped.");
+            } else {
+                System.out.println("No such consumer running.");
+            }
+        }
+
+        public void listThreads() {
+            System.out.println("Active Producers: " + producers.keySet());
+            System.out.println("Active Consumers: " + consumers.keySet());
+        }
+
+        public void shutdownAll() {
+            producers.values().forEach(Thread::interrupt);
+            consumers.values().forEach(Thread::interrupt);
+            producers.clear();
+            consumers.clear();
+            System.out.println("All threads stopped.");
+        }
+    }
+
+    // --- Console Menu ---
+    static class Menu {
+        private final Scanner sc = new Scanner(System.in);
+        private final Manager manager = new Manager();
+
+        public void run() {
+            while (true) {
+                System.out.println("\n=== Producer-Consumer Menu ===");
+                System.out.println("1. Start Producer");
+                System.out.println("2. Start Consumer");
+                System.out.println("3. Stop Producer");
+                System.out.println("4. Stop Consumer");
+                System.out.println("5. List Threads");
+                System.out.println("0. Exit");
+                System.out.print("Choice: ");
+                String choice = sc.nextLine();
+
+                switch (choice) {
+                    case "1": manager.startProducer(); break;
+                    case "2": manager.startConsumer(); break;
+                    case "3":
+                        System.out.print("Enter producer name: ");
+                        manager.stopProducer(sc.nextLine());
+                        break;
+                    case "4":
+                        System.out.print("Enter consumer name: ");
+                        manager.stopConsumer(sc.nextLine());
+                        break;
+                    case "5": manager.listThreads(); break;
+                    case "0":
+                        manager.shutdownAll();
+                        return;
+                    default:
+                        System.out.println("Invalid choice.");
+                }
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        new Menu().run();
+    }
+}
