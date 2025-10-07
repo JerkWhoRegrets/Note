@@ -1,0 +1,285 @@
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.*;
+
+/**
+ * Traffic Intersection Simulator (Extended)
+ * Console-based multithreaded simulation of cars crossing under traffic lights.
+ */
+public class TrafficIntersection300 {
+
+    // --- Directions ---
+    enum Direction { NORTH, SOUTH, EAST, WEST }
+
+    // --- Light states ---
+    enum LightState { GREEN, RED }
+
+    // --- Shared Intersection ---
+    static class Intersection {
+        private final ReentrantLock lock = new ReentrantLock();
+        private final Condition northSouthGreen = lock.newCondition();
+        private final Condition eastWestGreen = lock.newCondition();
+
+        private LightState northSouth = LightState.GREEN;
+        private LightState eastWest = LightState.RED;
+
+        // Stats
+        private int totalCarsPassed = 0;
+
+        public void enter(Direction dir) throws InterruptedException {
+            lock.lock();
+            try {
+                while (!canPass(dir)) {
+                    if (dir == Direction.NORTH || dir == Direction.SOUTH)
+                        northSouthGreen.await();
+                    else
+                        eastWestGreen.await();
+                }
+                totalCarsPassed++;
+                System.out.printf("🚗 Car from %s is crossing... (Total passed: %d)%n",
+                        dir, totalCarsPassed);
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        public void exit(Direction dir) {
+            System.out.printf("✅ Car from %s cleared intersection.%n", dir);
+        }
+
+        public void changeLights() {
+            lock.lock();
+            try {
+                if (northSouth == LightState.GREEN) {
+                    northSouth = LightState.RED;
+                    eastWest = LightState.GREEN;
+                    System.out.println("\n🔴 North-South: RED | 🟢 East-West: GREEN");
+                    eastWestGreen.signalAll();
+                } else {
+                    northSouth = LightState.GREEN;
+                    eastWest = LightState.RED;
+                    System.out.println("\n🟢 North-South: GREEN | 🔴 East-West: RED");
+                    northSouthGreen.signalAll();
+                }
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private boolean canPass(Direction dir) {
+            return (dir == Direction.NORTH || dir == Direction.SOUTH)
+                    ? northSouth == LightState.GREEN
+                    : eastWest == LightState.GREEN;
+        }
+
+        public int getTotalCarsPassed() {
+            lock.lock();
+            try {
+                return totalCarsPassed;
+            } finally {
+                lock.unlock();
+            }
+        }
+    }
+
+    // --- Car thread ---
+    static class Car implements Runnable {
+        private final Direction direction;
+        private final Intersection intersection;
+        private final int id;
+
+        public Car(Direction dir, Intersection intersection, int id) {
+            this.direction = dir;
+            this.intersection = intersection;
+            this.id = id;
+        }
+
+        @Override
+        public void run() {
+            try {
+                System.out.printf("🚘 Car-%d from %s waiting...%n", id, direction);
+                intersection.enter(direction);
+                Thread.sleep(400 + new Random().nextInt(500)); // time to cross
+                intersection.exit(direction);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    // --- Traffic Light Thread ---
+    static class TrafficLight implements Runnable {
+        private final Intersection intersection;
+        private volatile boolean running = true;
+
+        public TrafficLight(Intersection intersection) {
+            this.intersection = intersection;
+        }
+
+        public void stop() { running = false; }
+
+        @Override
+        public void run() {
+            while (running) {
+                try {
+                    Thread.sleep(7000); // green duration
+                    intersection.changeLights();
+                } catch (InterruptedException e) {
+                    running = false;
+                }
+            }
+        }
+    }
+
+    // --- Car Spawner Thread ---
+    static class CarSpawner implements Runnable {
+        private final Intersection intersection;
+        private final ExecutorService pool;
+        private final Random random = new Random();
+        private volatile boolean running = true;
+        private int carId = 0;
+
+        public CarSpawner(Intersection intersection, ExecutorService pool) {
+            this.intersection = intersection;
+            this.pool = pool;
+        }
+
+        public void stop() { running = false; }
+
+        @Override
+        public void run() {
+            while (running) {
+                try {
+                    Direction dir = Direction.values()[random.nextInt(4)];
+                    carId++;
+                    pool.submit(new Car(dir, intersection, carId));
+                    Thread.sleep(1000 + random.nextInt(1500));
+                } catch (InterruptedException e) {
+                    running = false;
+                }
+            }
+        }
+    }
+
+    // --- Statistics Reporter ---
+    static class Reporter implements Runnable {
+        private final Intersection intersection;
+        private volatile boolean running = true;
+
+        public Reporter(Intersection intersection) {
+            this.intersection = intersection;
+        }
+
+        public void stop() { running = false; }
+
+        @Override
+        public void run() {
+            while (running) {
+                try {
+                    Thread.sleep(5000);
+                    System.out.printf("📊 [STATS] Total Cars Passed: %d%n",
+                            intersection.getTotalCarsPassed());
+                } catch (InterruptedException e) {
+                    running = false;
+                }
+            }
+        }
+    }
+
+    // --- Console Menu ---
+    static class SimulatorMenu {
+        private final Scanner scanner = new Scanner(System.in);
+        private final ExecutorService pool = Executors.newCachedThreadPool();
+        private final Intersection intersection = new Intersection();
+        private final TrafficLight light = new TrafficLight(intersection);
+        private final CarSpawner spawner = new CarSpawner(intersection, pool);
+        private final Reporter reporter = new Reporter(intersection);
+
+        private Thread lightThread;
+        private Thread spawnThread;
+        private Thread reportThread;
+
+        public void start() {
+            lightThread = new Thread(light);
+            spawnThread = new Thread(spawner);
+            reportThread = new Thread(reporter);
+
+            lightThread.start();
+            spawnThread.start();
+            reportThread.start();
+
+            runMenu();
+        }
+
+        private void runMenu() {
+            while (true) {
+                System.out.println("\n=== 🚦 Traffic Intersection Simulator ===");
+                System.out.println("1. Manually Add Car");
+                System.out.println("2. Pause Auto-Spawning");
+                System.out.println("3. Resume Auto-Spawning");
+                System.out.println("4. Show Stats");
+                System.out.println("0. Exit");
+                System.out.print("Select: ");
+                String input = scanner.nextLine();
+
+                switch (input) {
+                    case "1": addCarManually(); break;
+                    case "2": spawner.stop(); System.out.println("⏸ Spawning paused."); break;
+                    case "3": restartSpawner(); break;
+                    case "4": System.out.printf("📈 Total Cars Passed: %d%n",
+                                    intersection.getTotalCarsPassed());
+                              break;
+                    case "0": shutdown(); return;
+                    default: System.out.println("Invalid choice."); break;
+                }
+            }
+        }
+
+        private void addCarManually() {
+            System.out.println("Choose direction (N/S/E/W): ");
+            String dir = scanner.nextLine().trim().toUpperCase();
+            Direction d = switch (dir) {
+                case "N" -> Direction.NORTH;
+                case "S" -> Direction.SOUTH;
+                case "E" -> Direction.EAST;
+                case "W" -> Direction.WEST;
+                default -> null;
+            };
+            if (d == null) {
+                System.out.println("Invalid direction.");
+                return;
+            }
+            int id = new Random().nextInt(10000);
+            pool.submit(new Car(d, intersection, id));
+            System.out.printf("🚙 Manually added Car-%d from %s%n", id, d);
+        }
+
+        private void restartSpawner() {
+            if (spawnThread.isAlive()) {
+                System.out.println("Spawner already running.");
+                return;
+            }
+            Thread newSpawner = new Thread(new CarSpawner(intersection, pool));
+            newSpawner.start();
+            System.out.println("▶️ Spawning resumed.");
+        }
+
+        private void shutdown() {
+            System.out.println("🛑 Stopping simulation...");
+            light.stop();
+            spawner.stop();
+            reporter.stop();
+            lightThread.interrupt();
+            spawnThread.interrupt();
+            reportThread.interrupt();
+            pool.shutdownNow();
+            System.out.println("✅ Simulation terminated.");
+        }
+    }
+
+    // --- Main ---
+    public static void main(String[] args) {
+        System.out.println("🚦 Starting Traffic Intersection Simulation (Extended)...");
+        new SimulatorMenu().start();
+    }
+}
