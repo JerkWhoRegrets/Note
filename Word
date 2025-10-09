@@ -1,0 +1,237 @@
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.io.*;
+
+/**
+ * Vocabulary Reminder App
+ * Shows a random word with meaning and example every few minutes.
+ * You can add/remove words dynamically while it's running.
+ */
+public class VocabularyApp300 {
+
+    private static final int DEFAULT_INTERVAL_MINUTES = 5;
+    private static final Scanner SCANNER = new Scanner(System.in);
+    private static final Map<String, WordEntry> WORDS = new ConcurrentHashMap<>();
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private static final AtomicInteger counter = new AtomicInteger(0);
+
+    private static volatile boolean running = true;
+    private static int intervalMinutes = DEFAULT_INTERVAL_MINUTES;
+
+    public static void main(String[] args) {
+        loadSampleWords();
+
+        System.out.println("📘 Vocabulary Reminder Started!");
+        System.out.println("A new word will appear every " + intervalMinutes + " minutes.");
+        System.out.println("Commands: add / remove / list / interval / help / quit");
+
+        // Schedule word display
+        scheduler.scheduleAtFixedRate(VocabularyApp300::showRandomWord, 0,
+                intervalMinutes, TimeUnit.MINUTES);
+
+        // Console input handling
+        scheduler.execute(VocabularyApp300::handleConsoleInput);
+
+        // Shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            running = false;
+            scheduler.shutdownNow();
+            System.out.println("\n👋 Exiting Vocabulary Reminder. Goodbye!");
+        }));
+    }
+
+    // =========================================
+    // === Core Functions
+    // =========================================
+
+    private static void showRandomWord() {
+        if (WORDS.isEmpty()) {
+            System.out.println("⚠️ No words available. Add some with 'add' command!");
+            return;
+        }
+        List<WordEntry> entries = new ArrayList<>(WORDS.values());
+        WordEntry entry = entries.get(new Random().nextInt(entries.size()));
+        int idx = counter.incrementAndGet();
+
+        System.out.println("\n==============================");
+        System.out.println("🔔 Word #" + idx + ": " + entry.word);
+        System.out.println("Part of Speech: " + entry.partOfSpeech);
+        System.out.println("Definition: " + entry.definition);
+        System.out.println("Example: " + entry.example);
+        System.out.println("==============================");
+    }
+
+    private static void handleConsoleInput() {
+        while (running) {
+            try {
+                System.out.print("\n> ");
+                String line = SCANNER.nextLine().trim().toLowerCase();
+                switch (line) {
+                    case "add":
+                        addWordInteractive();
+                        break;
+                    case "remove":
+                        removeWordInteractive();
+                        break;
+                    case "list":
+                        listWords();
+                        break;
+                    case "interval":
+                        changeInterval();
+                        break;
+                    case "help":
+                        printHelp();
+                        break;
+                    case "quit":
+                    case "exit":
+                        running = false;
+                        scheduler.shutdownNow();
+                        System.out.println("👋 Exiting Vocabulary Reminder.");
+                        return;
+                    default:
+                        System.out.println("❓ Unknown command. Type 'help' for options.");
+                }
+            } catch (Exception e) {
+                System.out.println("⚠️ Error: " + e.getMessage());
+            }
+        }
+    }
+
+    // =========================================
+    // === Word Management
+    // =========================================
+
+    private static void addWordInteractive() {
+        System.out.print("Enter word: ");
+        String word = SCANNER.nextLine().trim();
+        if (word.isEmpty()) {
+            System.out.println("❌ Word cannot be empty.");
+            return;
+        }
+        if (WORDS.containsKey(word.toLowerCase())) {
+            System.out.println("⚠️ Word already exists.");
+            return;
+        }
+
+        System.out.print("Part of speech (noun/verb/etc): ");
+        String pos = SCANNER.nextLine().trim();
+
+        System.out.print("Definition: ");
+        String def = SCANNER.nextLine().trim();
+
+        System.out.print("Example sentence: ");
+        String ex = SCANNER.nextLine().trim();
+
+        WORDS.put(word.toLowerCase(), new WordEntry(word, pos, def, ex));
+        System.out.println("✅ Word added successfully!");
+    }
+
+    private static void removeWordInteractive() {
+        System.out.print("Enter word to remove: ");
+        String word = SCANNER.nextLine().trim().toLowerCase();
+        if (WORDS.remove(word) != null) {
+            System.out.println("🗑️ Word removed successfully.");
+        } else {
+            System.out.println("⚠️ Word not found.");
+        }
+    }
+
+    private static void listWords() {
+        if (WORDS.isEmpty()) {
+            System.out.println("📭 No words stored.");
+            return;
+        }
+        System.out.println("\n📚 Current Vocabulary List:");
+        WORDS.values().forEach(System.out::println);
+        System.out.println("Total: " + WORDS.size() + " words.");
+    }
+
+    private static void changeInterval() {
+        System.out.print("Enter new interval (minutes): ");
+        try {
+            int min = Integer.parseInt(SCANNER.nextLine().trim());
+            if (min < 1) {
+                System.out.println("⚠️ Interval must be at least 1 minute.");
+                return;
+            }
+            intervalMinutes = min;
+            System.out.println("⏱ Interval updated to " + intervalMinutes + " minutes.");
+            restartScheduler();
+        } catch (NumberFormatException e) {
+            System.out.println("❌ Invalid number.");
+        }
+    }
+
+    private static void restartScheduler() {
+        scheduler.shutdownNow();
+        ScheduledExecutorService newScheduler = Executors.newScheduledThreadPool(2);
+        newScheduler.scheduleAtFixedRate(VocabularyApp300::showRandomWord, 0,
+                intervalMinutes, TimeUnit.MINUTES);
+        newScheduler.execute(VocabularyApp300::handleConsoleInput);
+    }
+
+    private static void printHelp() {
+        System.out.println("""
+            🆘 Commands:
+             add       - Add a new word
+             remove    - Remove an existing word
+             list      - List all words
+             interval  - Change reminder interval
+             help      - Show this help menu
+             quit/exit - Exit the app
+            """);
+    }
+
+    // =========================================
+    // === Data Model & Samples
+    // =========================================
+
+    private static class WordEntry {
+        String word;
+        String partOfSpeech;
+        String definition;
+        String example;
+
+        WordEntry(String word, String pos, String def, String ex) {
+            this.word = word;
+            this.partOfSpeech = pos;
+            this.definition = def;
+            this.example = ex;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("- %s (%s): %s\n  e.g., %s",
+                    word, partOfSpeech, definition, example);
+        }
+    }
+
+    private static void loadSampleWords() {
+        WORDS.put("serendipity", new WordEntry(
+                "Serendipity", "noun",
+                "The occurrence of events by chance in a happy or beneficial way.",
+                "Meeting my best friend in a bookstore was pure serendipity."
+        ));
+        WORDS.put("ephemeral", new WordEntry(
+                "Ephemeral", "adjective",
+                "Lasting for a very short time.",
+                "Beauty is ephemeral, but kindness endures."
+        ));
+        WORDS.put("lucid", new WordEntry(
+                "Lucid", "adjective",
+                "Expressed clearly; easy to understand.",
+                "Her explanation was so lucid that everyone understood immediately."
+        ));
+        WORDS.put("zenith", new WordEntry(
+                "Zenith", "noun",
+                "The highest point or state of something.",
+                "At the zenith of his career, he was admired worldwide."
+        ));
+        WORDS.put("meticulous", new WordEntry(
+                "Meticulous", "adjective",
+                "Showing great attention to detail; very careful and precise.",
+                "He kept meticulous records of every transaction."
+        ));
+    }
+}
