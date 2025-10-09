@@ -1,0 +1,314 @@
+// Save as: DemoAopApplication.java
+// Build with Spring Boot (spring-boot-starter-web, spring-boot-starter-aop)
+
+import org.springframework.aop.framework.AopContext;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.*;
+import org.springframework.stereotype.*;
+import org.springframework.web.bind.annotation.*;
+import org.aspectj.lang.*;
+import org.aspectj.lang.annotation.*;
+import org.aspectj.lang.reflect.MethodSignature;
+import javax.annotation.PostConstruct;
+import java.lang.annotation.*;
+import java.lang.reflect.Method;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Demo Spring Boot application showcasing in-depth Spring AOP patterns.
+ *
+ * To run:
+ *  - Include spring-boot-starter-web and spring-boot-starter-aop
+ *  - Run this as a Spring Boot app and call endpoints to see aspects in action.
+ */
+@SpringBootApplication
+@EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
+public class DemoAopApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(DemoAopApplication.class, args);
+    }
+
+    // ---------------------------
+    // --- Custom Annotations ---
+    // ---------------------------
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target({ElementType.METHOD, ElementType.TYPE})
+    public @interface Timed {
+    }
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.METHOD)
+    public @interface Audit {
+        String value() default "";
+    }
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.METHOD)
+    public @interface Retry {
+        int attempts() default 3;
+        long delayMs() default 200;
+    }
+
+    // ---------------------------
+    // --- Example Service API ---
+    // ---------------------------
+
+    public interface PaymentOperations {
+        String processPayment(String account, double amount);
+    }
+
+    // We'll demonstrate introduction: add PerformanceMonitor to beans
+    public interface PerformanceMonitor {
+        int getCallCount();
+    }
+
+    // ---------------------------
+    // --- Sample Service ---
+    // ---------------------------
+
+    @Service
+    public static class PaymentService implements PaymentOperations {
+
+        private final Random rnd = new Random();
+
+        @Timed
+        @Audit("payment.process")
+        @Retry(attempts = 4, delayMs = 150)
+        @Override
+        public String processPayment(String account, double amount) {
+            // simulate occasional failure and some work
+            simulateLatency();
+            if (rnd.nextInt(10) < 3) { // 30% chance to fail
+                throw new IllegalStateException("Transient payment gateway error");
+            }
+            return "OK:" + account + ":" + amount;
+        }
+
+        private void simulateLatency() {
+            try {
+                Thread.sleep(100 + rnd.nextInt(200));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    // ---------------------------
+    // --- REST Controller ---
+    // ---------------------------
+
+    @RestController
+    @RequestMapping("/api")
+    public static class DemoController {
+        private final PaymentOperations paymentService;
+
+        public DemoController(PaymentOperations paymentService) {
+            this.paymentService = paymentService;
+        }
+
+        @GetMapping("/pay")
+        public String pay(@RequestParam(defaultValue = "acct-1") String acct,
+                          @RequestParam(defaultValue = "10.0") double amount) {
+            // Demonstrate calling through proxy to allow aspects (if self-invocation needed use AopContext)
+            return paymentService.processPayment(acct, amount);
+        }
+
+        // Endpoint to show introduction behaviour (PerformanceMonitor)
+        @GetMapping("/stats")
+        public String stats() {
+            // paymentService should be a proxied object that also implements PerformanceMonitor
+            if (paymentService instanceof PerformanceMonitor) {
+                PerformanceMonitor pm = (PerformanceMonitor) paymentService;
+                return "calls=" + pm.getCallCount();
+            } else {
+                return "no monitor available";
+            }
+        }
+    }
+
+    // ---------------------------
+    // --- Aspects & Config ---
+    // ---------------------------
+
+    @Configuration
+    public static class AopConfig {
+        // If you want to force CGLIB proxies rather than JDK dynamic proxies:
+        @Bean
+        public static BeanFactoryAspectJAdvisorsBuilderIgnore dummy() {
+            // dummy bean just to show config class presence; no-op
+            return new BeanFactoryAspectJAdvisorsBuilderIgnore();
+        }
+    }
+
+    // tiny no-op class used only to keep bean method above valid
+    static class BeanFactoryAspectJAdvisorsBuilderIgnore { }
+
+    // ---------------------------
+    // --- Timed Aspect (Around)
+    // ---------------------------
+
+    @Aspect
+    @Component
+    @Order(10) // ordering matters when multiple aspects apply
+    public static class TimedAspect {
+
+        @Around("@annotation(DemoAopApplication.Timed) || @within(DemoAopApplication.Timed)")
+        public Object timeExecution(ProceedingJoinPoint pjp) throws Throwable {
+            MethodSignature sig = (MethodSignature) pjp.getSignature();
+            Method m = sig.getMethod();
+            String name = pjp.getTarget().getClass().getSimpleName() + "." + m.getName();
+            Instant start = Instant.now();
+            try {
+                Object result = pjp.proceed();
+                return result;
+            } finally {
+                Instant end = Instant.now();
+                long ms = Duration.between(start, end).toMillis();
+                System.out.printf("⏱ TIMED: %s took %dms%n", name, ms);
+            }
+        }
+    }
+
+    // ---------------------------
+    // --- Audit Aspect (AfterReturning + Before)
+    // ---------------------------
+
+    @Aspect
+    @Component
+    @Order(20)
+    public static class AuditAspect {
+
+        @Before("@annotation(aud)")
+        public void beforeAudit(JoinPoint jp, Audit aud) {
+            MethodSignature sig = (MethodSignature) jp.getSignature();
+            System.out.printf("🔎 AUDIT BEFORE: %s, args=%s, tag=%s%n",
+                    sig.getMethod().getName(), Arrays.toString(jp.getArgs()), aud.value());
+        }
+
+        @AfterReturning(pointcut = "@annotation(aud)", returning = "ret")
+        public void afterAudit(JoinPoint jp, Audit aud, Object ret) {
+            MethodSignature sig = (MethodSignature) jp.getSignature();
+            System.out.printf("🔒 AUDIT AFTER: %s returned=%s, tag=%s%n",
+                    sig.getMethod().getName(), ret, aud.value());
+        }
+    }
+
+    // ---------------------------
+    // --- Retry Aspect (Around) ---
+    // ---------------------------
+
+    @Aspect
+    @Component
+    @Order(5) // retry should be one of the earliest so it re-invokes underlying advices
+    public static class RetryAspect {
+
+        @Around("@annotation(retry)")
+        public Object aroundRetry(ProceedingJoinPoint pjp, Retry retry) throws Throwable {
+            int attempts = retry.attempts();
+            long delay = retry.delayMs();
+            Throwable last = null;
+            for (int i = 1; i <= attempts; i++) {
+                try {
+                    if (i > 1) {
+                        System.out.printf("↺ RETRY: attempt %d for %s%n", i,
+                                pjp.getSignature().getName());
+                    }
+                    return pjp.proceed();
+                } catch (Throwable t) {
+                    last = t;
+                    System.out.printf("⚠️ Attempt %d failed: %s%n", i, t.getMessage());
+                    Thread.sleep(delay);
+                }
+            }
+            System.out.printf("❌ All %d attempts failed for %s%n", attempts, pjp.getSignature().getName());
+            throw last;
+        }
+    }
+
+    // ---------------------------
+    // --- Exception Logging (AfterThrowing)
+    // ---------------------------
+
+    @Aspect
+    @Component
+    @Order(30)
+    public static class ExceptionLoggingAspect {
+
+        @AfterThrowing(pointcut = "execution(* DemoAopApplication.*.*(..))", throwing = "ex")
+        public void logException(JoinPoint jp, Throwable ex) {
+            System.out.printf("🔥 EXCEPTION in %s: %s%n", jp.getSignature().toShortString(), ex.toString());
+        }
+    }
+
+    // ---------------------------
+    // --- Introduction / DeclareParents ---
+    // ---------------------------
+
+    @Aspect
+    @Component
+    public static class IntroductionAspect {
+
+        // Any bean that implements PaymentOperations will also implement PerformanceMonitor
+        @DeclareParents(value = "DemoAopApplication.PaymentOperations+", defaultImpl = PerformanceMonitorImpl.class)
+        public static PerformanceMonitor mixin;
+
+        public static class PerformanceMonitorImpl implements PerformanceMonitor {
+            private final AtomicInteger calls = new AtomicInteger(0);
+
+            // This is invoked via advice below that increments the counter
+            public int getCallCount() {
+                return calls.get();
+            }
+
+            public void increment() {
+                calls.incrementAndGet();
+            }
+        }
+
+        // use a before advice to increment call count on all PaymentOperations calls
+        @Before("execution(* DemoAopApplication.PaymentOperations.*(..)) && this(monitor)")
+        public void incrementCount(PerformanceMonitorImpl monitor) {
+            // monitor here is the mixed-in implementation
+            monitor.increment();
+        }
+    }
+
+    // ---------------------------
+    // --- Demonstration Runner ---
+    // ---------------------------
+
+    // Create a bean to call the service a few times for demonstration at startup
+    @Component
+    public static class DemoRunner {
+        private final PaymentOperations service;
+
+        public DemoRunner(PaymentOperations service) {
+            this.service = service;
+        }
+
+        @PostConstruct
+        public void runDemo() {
+            System.out.println(">>> DemoRunner invoking processPayment 5 times to show AOP in action");
+            for (int i = 0; i < 5; i++) {
+                try {
+                    String result = service.processPayment("acct-" + i, 10.0 + i);
+                    System.out.println("Result: " + result);
+                } catch (Exception e) {
+                    System.out.println("Call failed: " + e.getMessage());
+                }
+            }
+
+            // Show the intro / PerformanceMonitor
+            if (service instanceof PerformanceMonitor) {
+                PerformanceMonitor pm = (PerformanceMonitor) service;
+                System.out.println("PerformanceMonitor call-count = " + pm.getCallCount());
+            }
+        }
+    }
+}
