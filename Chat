@@ -1,0 +1,206 @@
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.util.concurrent.*;
+
+/**
+ * Console Chat Server & Client Simulator
+ * Demonstrates multithreading, networking, and console I/O.
+ */
+public class ChatApp300 {
+
+    // ================================
+    // === Shared Server Component ===
+    // ================================
+    static class ChatServer {
+        private final int port;
+        private final ExecutorService pool = Executors.newCachedThreadPool();
+        private final Set<ClientHandler> clients = ConcurrentHashMap.newKeySet();
+
+        public ChatServer(int port) {
+            this.port = port;
+        }
+
+        public void start() {
+            try (ServerSocket serverSocket = new ServerSocket(port)) {
+                System.out.printf("💡 ChatServer running on port %d...%n", port);
+                while (true) {
+                    Socket socket = serverSocket.accept();
+                    ClientHandler handler = new ClientHandler(socket, this);
+                    clients.add(handler);
+                    pool.submit(handler);
+                }
+            } catch (IOException e) {
+                System.out.println("❌ Server stopped: " + e.getMessage());
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+
+        public void broadcast(String message, ClientHandler exclude) {
+            for (ClientHandler client : clients) {
+                if (client != exclude) {
+                    client.sendMessage(message);
+                }
+            }
+        }
+
+        public void removeClient(ClientHandler handler) {
+            clients.remove(handler);
+            System.out.printf("👋 %s disconnected.%n", handler.getClientName());
+        }
+
+        public static void main(String[] args) {
+            new ChatServer(5050).start();
+        }
+    }
+
+    // ================================
+    // === Handles each client ===
+    // ================================
+    static class ClientHandler implements Runnable {
+        private final Socket socket;
+        private final ChatServer server;
+        private PrintWriter out;
+        private BufferedReader in;
+        private String clientName = "Anonymous";
+
+        public ClientHandler(Socket socket, ChatServer server) {
+            this.socket = socket;
+            this.server = server;
+        }
+
+        public String getClientName() {
+            return clientName;
+        }
+
+        @Override
+        public void run() {
+            try {
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);
+
+                out.println("Enter your name: ");
+                clientName = in.readLine();
+                System.out.printf("✅ %s joined the chat.%n", clientName);
+                server.broadcast("🟢 " + clientName + " has joined the chat!", this);
+
+                String msg;
+                while ((msg = in.readLine()) != null) {
+                    if (msg.equalsIgnoreCase("/quit")) break;
+                    String formatted = "[" + clientName + "]: " + msg;
+                    System.out.println(formatted);
+                    server.broadcast(formatted, this);
+                }
+
+            } catch (IOException e) {
+                System.out.println("⚠️ Connection error: " + e.getMessage());
+            } finally {
+                close();
+            }
+        }
+
+        public void sendMessage(String message) {
+            out.println(message);
+        }
+
+        private void close() {
+            try {
+                server.removeClient(this);
+                server.broadcast("🔴 " + clientName + " left the chat.", this);
+                if (socket != null) socket.close();
+            } catch (IOException e) {
+                System.out.println("Error closing socket: " + e.getMessage());
+            }
+        }
+    }
+
+    // ================================
+    // === Console Chat Client ===
+    // ================================
+    static class ChatClient {
+        private final String hostname;
+        private final int port;
+        private Socket socket;
+        private PrintWriter out;
+        private BufferedReader in;
+        private String userName;
+
+        public ChatClient(String hostname, int port) {
+            this.hostname = hostname;
+            this.port = port;
+        }
+
+        public void start() {
+            try {
+                socket = new Socket(hostname, port);
+                System.out.println("🔗 Connected to chat server!");
+
+                out = new PrintWriter(socket.getOutputStream(), true);
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+                new Thread(new ReaderTask(in)).start();
+
+                BufferedReader console = new BufferedReader(new InputStreamReader(System.in));
+                String serverMsg = in.readLine();
+                System.out.print(serverMsg);
+                userName = console.readLine();
+                out.println(userName);
+
+                System.out.println("💬 Type messages (/quit to exit):");
+                String input;
+                while ((input = console.readLine()) != null) {
+                    out.println(input);
+                    if (input.equalsIgnoreCase("/quit")) break;
+                }
+
+            } catch (IOException e) {
+                System.out.println("❌ Error: " + e.getMessage());
+            } finally {
+                close();
+            }
+        }
+
+        private void close() {
+            try {
+                if (socket != null) socket.close();
+            } catch (IOException ignored) {}
+        }
+
+        private static class ReaderTask implements Runnable {
+            private final BufferedReader in;
+            public ReaderTask(BufferedReader in) { this.in = in; }
+            @Override
+            public void run() {
+                try {
+                    String msg;
+                    while ((msg = in.readLine()) != null) {
+                        System.out.println(msg);
+                    }
+                } catch (IOException e) {
+                    System.out.println("🔕 Disconnected from server.");
+                }
+            }
+        }
+
+        public static void main(String[] args) {
+            new ChatClient("localhost", 5050).start();
+        }
+    }
+
+    // ================================
+    // === Launcher ===
+    // ================================
+    public static void main(String[] args) {
+        System.out.println("Choose mode: ");
+        System.out.println("1. Server  2. Client");
+        try (Scanner sc = new Scanner(System.in)) {
+            String choice = sc.nextLine();
+            if (choice.equals("1")) {
+                ChatServer.main(null);
+            } else {
+                ChatClient.main(null);
+            }
+        }
+    }
+}
