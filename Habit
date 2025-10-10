@@ -1,0 +1,235 @@
+import java.io.*;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * Advanced Habit Tracker & Reminder App
+ * Multi-threaded, console-based, tracks streaks, history, reminders, motivational quotes.
+ * ~300 lines of Java
+ */
+public class HabitTrackerApp {
+
+    // -----------------------------
+    // Constants and Utilities
+    // -----------------------------
+    private static final String SAVE_FILE = "habits_full_app.txt";
+    private static final Scanner SCANNER = new Scanner(System.in);
+    private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final AtomicBoolean running = new AtomicBoolean(true);
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private static final List<String> motivationalQuotes = Arrays.asList(
+            "Consistency is key!", "Small steps every day!", "Your future self will thank you!",
+            "Build your streaks!", "Never skip two days in a row!", "Discipline is freedom!"
+    );
+
+    // Map of habits
+    private static final Map<String, Habit> habits = new ConcurrentHashMap<>();
+
+    // -----------------------------
+    // Main Method
+    // -----------------------------
+    public static void main(String[] args) {
+        loadHabits();
+        printWelcome();
+
+        // Start reminder thread every 1 minute
+        scheduler.scheduleAtFixedRate(HabitTrackerApp::sendReminders, 0, 1, TimeUnit.MINUTES);
+
+        while (running.get()) {
+            System.out.print("\n> ");
+            String input = SCANNER.nextLine().trim().toLowerCase();
+            switch (input) {
+                case "add": addHabit(); break;
+                case "done": markDone(); break;
+                case "list": listHabits(); break;
+                case "streaks": showStreaks(); break;
+                case "history": showHistory(); break;
+                case "reminders": setReminder(); break;
+                case "save": saveHabits(); break;
+                case "help": printHelp(); break;
+                case "quit": exitApp(); break;
+                default: System.out.println("❓ Unknown command. Type 'help'.");
+            }
+        }
+    }
+
+    // -----------------------------
+    // Menu Helpers
+    // -----------------------------
+    private static void printWelcome() {
+        System.out.println("📅 Welcome to Advanced Habit Tracker & Reminder!");
+        System.out.println("Commands: add / done / list / streaks / history / reminders / save / help / quit");
+    }
+
+    private static void printHelp() {
+        System.out.println("""
+            🆘 Commands:
+             add       - Add new habit
+             done      - Mark habit done today
+             list      - List all habits
+             streaks   - Show streak counts
+             history   - Show completion history
+             reminders - Set reminders for habit
+             save      - Save habits to file
+             help      - Show this menu
+             quit      - Exit
+            """);
+    }
+
+    // -----------------------------
+    // Habit Management
+    // -----------------------------
+    private static void addHabit() {
+        System.out.print("Enter habit name: ");
+        String name = SCANNER.nextLine().trim();
+        if (name.isEmpty()) { System.out.println("⚠️ Name cannot be empty."); return; }
+        if (habits.containsKey(name)) { System.out.println("⚠️ Habit already exists."); return; }
+        habits.put(name, new Habit(name));
+        System.out.println("✅ Habit added: " + name);
+    }
+
+    private static void markDone() {
+        System.out.print("Enter habit name to mark done: ");
+        String name = SCANNER.nextLine().trim();
+        Habit h = habits.get(name);
+        if (h == null) { System.out.println("❌ Habit not found."); return; }
+        if (h.markDone()) {
+            System.out.println("🎯 Marked done! Current streak: " + h.getStreak());
+        } else {
+            System.out.println("⚠️ Already marked today.");
+        }
+    }
+
+    private static void listHabits() {
+        if (habits.isEmpty()) { System.out.println("📭 No habits yet."); return; }
+        System.out.println("\n📋 Habits:");
+        habits.values().forEach(h -> System.out.println("- " + h.name));
+    }
+
+    private static void showStreaks() {
+        if (habits.isEmpty()) { System.out.println("📭 No habits yet."); return; }
+        System.out.println("\n🔥 Streaks:");
+        habits.values().forEach(h -> System.out.println("- " + h.name + ": " + h.getStreak() + " days"));
+    }
+
+    private static void showHistory() {
+        if (habits.isEmpty()) { System.out.println("📭 No habits yet."); return; }
+        System.out.println("\n📝 History:");
+        habits.values().forEach(h -> {
+            System.out.println("Habit: " + h.name);
+            h.history.forEach(date -> System.out.println("  " + date));
+        });
+    }
+
+    private static void setReminder() {
+        System.out.print("Enter habit name: ");
+        String name = SCANNER.nextLine().trim();
+        Habit h = habits.get(name);
+        if (h == null) { System.out.println("❌ Habit not found."); return; }
+        System.out.print("Enter reminder hour (0-23): ");
+        int hour = Integer.parseInt(SCANNER.nextLine().trim());
+        System.out.print("Enter reminder minute (0-59): ");
+        int minute = Integer.parseInt(SCANNER.nextLine().trim());
+        h.addReminder(hour, minute);
+        System.out.println("⏰ Reminder set for " + h.name + " at " + String.format("%02d:%02d", hour, minute));
+    }
+
+    // -----------------------------
+    // Reminders
+    // -----------------------------
+    private static void sendReminders() {
+        if (habits.isEmpty()) return;
+        LocalTime now = LocalTime.now();
+        for (Habit h : habits.values()) {
+            for (LocalTime t : h.reminders) {
+                if (t.getHour() == now.getHour() && t.getMinute() == now.getMinute() && !h.doneToday()) {
+                    String quote = motivationalQuotes.get(new Random().nextInt(motivationalQuotes.size()));
+                    System.out.println("\n⏰ Reminder! Complete habit: " + h.name + " - " + quote);
+                    System.out.print("> ");
+                }
+            }
+        }
+    }
+
+    // -----------------------------
+    // Persistence
+    // -----------------------------
+    private static void saveHabits() {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(SAVE_FILE))) {
+            for (Habit h : habits.values()) bw.write(h.serialize() + "\n");
+            System.out.println("💾 Habits saved.");
+        } catch (IOException e) { System.out.println("⚠️ Failed to save habits: " + e.getMessage()); }
+    }
+
+    private static void loadHabits() {
+        File file = new File(SAVE_FILE);
+        if (!file.exists()) return;
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                Habit h = Habit.deserialize(line);
+                if (h != null) habits.put(h.name, h);
+            }
+            System.out.println("✅ Habits loaded.");
+        } catch (Exception e) { System.out.println("⚠️ Failed to load habits: " + e.getMessage()); }
+    }
+
+    private static void exitApp() {
+        running.set(false);
+        scheduler.shutdownNow();
+        saveHabits();
+        System.out.println("👋 Goodbye! Keep your habits strong!");
+    }
+
+    // -----------------------------
+    // Habit Class
+    // -----------------------------
+    private static class Habit {
+        private final String name;
+        private int streak = 0;
+        private LocalDate lastDone = LocalDate.MIN;
+        private final List<LocalDate> history = new ArrayList<>();
+        private final List<LocalTime> reminders = new ArrayList<>();
+
+        public Habit(String name) { this.name = name; }
+
+        public boolean markDone() {
+            LocalDate today = LocalDate.now();
+            if (lastDone.equals(today)) return false;
+            streak = lastDone.equals(today.minusDays(1)) ? streak + 1 : 1;
+            lastDone = today;
+            history.add(today);
+            return true;
+        }
+
+        public boolean doneToday() { return lastDone.equals(LocalDate.now()); }
+        public int getStreak() { return streak; }
+        public void addReminder(int h, int m) { reminders.add(LocalTime.of(h, m)); }
+
+        public String serialize() {
+            String hist = String.join(",", history.stream().map(d -> d.format(dtf)).toList());
+            String rems = String.join(",", reminders.stream().map(Object::toString).toList());
+            return name + "|" + streak + "|" + lastDone.format(dtf) + "|" + hist + "|" + rems;
+        }
+
+        public static Habit deserialize(String line) {
+            try {
+                String[] parts = line.split("\\|");
+                String name = parts[0];
+                int streak = Integer.parseInt(parts[1]);
+                LocalDate last = LocalDate.parse(parts[2], dtf);
+                List<LocalDate> hist = new ArrayList<>();
+                if (!parts[3].isEmpty()) for (String d : parts[3].split(",")) hist.add(LocalDate.parse(d, dtf));
+                List<LocalTime> rems = new ArrayList<>();
+                if (!parts[4].isEmpty()) for (String t : parts[4].split(",")) rems.add(LocalTime.parse(t));
+                Habit h = new Habit(name);
+                h.streak = streak; h.lastDone = last;
+                h.history.addAll(hist); h.reminders.addAll(rems);
+                return h;
+            } catch (Exception e) { return null; }
+        }
+    }
+}
