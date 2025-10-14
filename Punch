@@ -1,0 +1,246 @@
+import java.io.*;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.concurrent.*;
+
+/**
+ * Punch-In Attendance Tracker (~300 lines)
+ * ----------------------------------------
+ * Console app for logging employee check-in/check-out events.
+ * Demonstrates file I/O, LocalDateTime, maps, and concurrency.
+ */
+public class PunchInApp {
+
+    private static final Scanner SC = new Scanner(System.in);
+    private static final Map<String, Employee> employees = new LinkedHashMap<>();
+    private static final String FILE = "attendance.txt";
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final ScheduledExecutorService REMINDER = Executors.newScheduledThreadPool(1);
+
+    private static boolean running = true;
+
+    // -------------------------------
+    // Data Model
+    // -------------------------------
+    static class Employee {
+        final String id;
+        final String name;
+        PunchRecord currentRecord; // if currently punched in
+        final List<PunchRecord> history = new ArrayList<>();
+
+        Employee(String id, String name) {
+            this.id = id; this.name = name;
+        }
+
+        boolean isPunchedIn() {
+            return currentRecord != null && currentRecord.punchOut == null;
+        }
+
+        void punchIn() {
+            if (isPunchedIn()) {
+                System.out.println("⚠️ Already punched in at " + currentRecord.punchIn.format(FORMATTER));
+                return;
+            }
+            currentRecord = new PunchRecord(LocalDateTime.now());
+            System.out.println("✅ " + name + " punched in at " + currentRecord.punchIn.format(FORMATTER));
+        }
+
+        void punchOut() {
+            if (!isPunchedIn()) {
+                System.out.println("⚠️ " + name + " has not punched in yet.");
+                return;
+            }
+            currentRecord.punchOut = LocalDateTime.now();
+            currentRecord.computeHours();
+            history.add(currentRecord);
+            System.out.println("👋 " + name + " punched out at " + currentRecord.punchOut.format(FORMATTER));
+            System.out.printf("🕒 Total worked: %.2f hours today.%n", currentRecord.hoursWorked);
+            currentRecord = null;
+        }
+
+        void showHistory() {
+            if (history.isEmpty()) {
+                System.out.println("No records for " + name);
+                return;
+            }
+            System.out.println("📜 Attendance for " + name + ":");
+            for (PunchRecord r : history) System.out.println(r);
+        }
+    }
+
+    static class PunchRecord {
+        LocalDateTime punchIn;
+        LocalDateTime punchOut;
+        double hoursWorked;
+
+        PunchRecord(LocalDateTime in) { this.punchIn = in; }
+
+        void computeHours() {
+            if (punchOut != null) {
+                hoursWorked = ChronoUnit.MINUTES.between(punchIn, punchOut) / 60.0;
+            }
+        }
+
+        public String toString() {
+            String in = punchIn.format(FORMATTER);
+            String out = (punchOut == null) ? "N/A" : punchOut.format(FORMATTER);
+            return String.format("IN: %s | OUT: %s | %.2f hrs", in, out, hoursWorked);
+        }
+    }
+
+    // -------------------------------
+    // Menu UI
+    // -------------------------------
+    public static void main(String[] args) {
+        loadFromFile();
+        System.out.println("👋 Welcome to Punch-In Attendance Tracker!");
+        System.out.println("Commands: add, in, out, list, summary, save, help, quit");
+
+        // Reminder thread: print message every 2 minutes (for demo)
+        REMINDER.scheduleAtFixedRate(() -> {
+            System.out.println("\n⏰ Reminder: Don't forget to punch in/out!");
+            System.out.print("> ");
+        }, 2, 2, TimeUnit.MINUTES);
+
+        while (running) {
+            System.out.print("\n> ");
+            String cmd = SC.nextLine().trim().toLowerCase();
+            switch (cmd) {
+                case "add" -> addEmployee();
+                case "in" -> doPunchIn();
+                case "out" -> doPunchOut();
+                case "list" -> listEmployees();
+                case "summary" -> dailySummary();
+                case "save" -> saveToFile();
+                case "help" -> printHelp();
+                case "quit" -> quitApp();
+                default -> System.out.println("❓ Unknown command. Type 'help'.");
+            }
+        }
+    }
+
+    // -------------------------------
+    // Command Implementations
+    // -------------------------------
+    private static void addEmployee() {
+        System.out.print("Enter employee ID: ");
+        String id = SC.nextLine().trim();
+        if (employees.containsKey(id)) {
+            System.out.println("⚠️ Employee ID already exists.");
+            return;
+        }
+        System.out.print("Enter employee name: ");
+        String name = SC.nextLine().trim();
+        Employee e = new Employee(id, name);
+        employees.put(id, e);
+        System.out.println("✅ Employee added: " + name + " (" + id + ")");
+    }
+
+    private static Employee findEmployee() {
+        System.out.print("Enter employee ID: ");
+        String id = SC.nextLine().trim();
+        Employee e = employees.get(id);
+        if (e == null) System.out.println("❌ Not found.");
+        return e;
+    }
+
+    private static void doPunchIn() {
+        Employee e = findEmployee();
+        if (e != null) e.punchIn();
+    }
+
+    private static void doPunchOut() {
+        Employee e = findEmployee();
+        if (e != null) e.punchOut();
+    }
+
+    private static void listEmployees() {
+        if (employees.isEmpty()) {
+            System.out.println("No employees yet.");
+            return;
+        }
+        System.out.println("\n👥 Registered Employees:");
+        employees.values().forEach(e -> System.out.println("- " + e.name + " (" + e.id + ")"));
+    }
+
+    private static void dailySummary() {
+        if (employees.isEmpty()) {
+            System.out.println("No employees.");
+            return;
+        }
+        System.out.println("\n📊 Daily Summary:");
+        for (Employee e : employees.values()) {
+            double total = e.history.stream()
+                    .filter(r -> r.punchIn.toLocalDate().equals(LocalDate.now()))
+                    .mapToDouble(r -> r.hoursWorked).sum();
+            System.out.printf("%-15s | %5.2f hrs%n", e.name, total);
+        }
+    }
+
+    private static void printHelp() {
+        System.out.println("""
+            🧭 Commands:
+             add       - Add new employee
+             in        - Punch in
+             out       - Punch out
+             list      - Show all employees
+             summary   - Show total hours today
+             save      - Save to file
+             help      - Show commands
+             quit      - Exit app
+            """);
+    }
+
+    // -------------------------------
+    // File Handling
+    // -------------------------------
+    private static void saveToFile() {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(FILE))) {
+            for (Employee e : employees.values()) {
+                for (PunchRecord r : e.history) {
+                    bw.write(e.id + "|" + e.name + "|" +
+                            r.punchIn.format(FORMATTER) + "|" +
+                            (r.punchOut == null ? "null" : r.punchOut.format(FORMATTER)) + "|" +
+                            r.hoursWorked + "\n");
+                }
+            }
+            System.out.println("💾 Attendance saved to " + FILE);
+        } catch (IOException ex) {
+            System.out.println("❌ Error saving: " + ex.getMessage());
+        }
+    }
+
+    private static void loadFromFile() {
+        File f = new File(FILE);
+        if (!f.exists()) return;
+        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] p = line.split("\\|");
+                if (p.length < 5) continue;
+                String id = p[0];
+                String name = p[1];
+                LocalDateTime in = LocalDateTime.parse(p[2], FORMATTER);
+                LocalDateTime out = p[3].equals("null") ? null : LocalDateTime.parse(p[3], FORMATTER);
+                double hrs = Double.parseDouble(p[4]);
+                Employee e = employees.computeIfAbsent(id, k -> new Employee(id, name));
+                PunchRecord r = new PunchRecord(in);
+                r.punchOut = out;
+                r.hoursWorked = hrs;
+                e.history.add(r);
+            }
+            System.out.println("📂 Loaded records from file.");
+        } catch (Exception ex) {
+            System.out.println("⚠️ Failed to load file: " + ex.getMessage());
+        }
+    }
+
+    private static void quitApp() {
+        running = false;
+        saveToFile();
+        REMINDER.shutdownNow();
+        System.out.println("👋 Goodbye! Work smart, not just hard!");
+    }
+}
