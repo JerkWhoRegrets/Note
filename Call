@@ -1,0 +1,273 @@
+import java.io.*;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.*;
+
+/**
+ * Hospital Calling System (~300 lines)
+ * ------------------------------------
+ * A console-based system to manage patient queues in hospital counters.
+ * Supports multiple counters, queue management, file logging, and simulated voice calling.
+ */
+public class HospitalCallingSystem {
+
+    // --------------- Configuration ----------------
+    private static final String LOG_FILE = "hospital_calls.log";
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final Scanner SC = new Scanner(System.in);
+    private static final ScheduledExecutorService SPEAKER = Executors.newScheduledThreadPool(2);
+
+    // --------------- Data Models ----------------
+    static class Patient {
+        final int queueNumber;
+        final String name;
+        final LocalDateTime arrivalTime;
+        boolean served = false;
+        String counter = "";
+
+        Patient(int queueNumber, String name) {
+            this.queueNumber = queueNumber;
+            this.name = name;
+            this.arrivalTime = LocalDateTime.now();
+        }
+
+        public String toString() {
+            return String.format("#%03d %-15s | Arrived: %s | %s",
+                    queueNumber, name, arrivalTime.format(FMT),
+                    served ? "✅ Served at " + counter : "⏳ Waiting");
+        }
+    }
+
+    static class Counter {
+        final String name;
+        final Queue<Patient> queue = new LinkedList<>();
+        Patient currentPatient = null;
+
+        Counter(String name) { this.name = name; }
+
+        void addPatient(Patient p) {
+            queue.offer(p);
+        }
+
+        void callNext() {
+            if (currentPatient != null) {
+                System.out.println("⚠️ Current patient not finished yet. Finish first.");
+                return;
+            }
+            currentPatient = queue.poll();
+            if (currentPatient == null) {
+                System.out.println("🚫 No patients waiting.");
+                return;
+            }
+            currentPatient.served = true;
+            currentPatient.counter = name;
+            announce(currentPatient);
+            logToFile(name + " called " + currentPatient.name + " (#" + currentPatient.queueNumber + ")");
+        }
+
+        void finishCurrent() {
+            if (currentPatient == null) {
+                System.out.println("⚠️ No patient being served.");
+                return;
+            }
+            System.out.println("✅ Finished serving " + currentPatient.name + " at " + name);
+            logToFile(name + " finished serving " + currentPatient.name);
+            currentPatient = null;
+        }
+
+        void recall() {
+            if (currentPatient == null) {
+                System.out.println("⚠️ No patient to recall.");
+                return;
+            }
+            announce(currentPatient);
+            logToFile(name + " recalled patient " + currentPatient.name);
+        }
+
+        void showQueue() {
+            System.out.println("\n📋 Queue for " + name + ":");
+            if (currentPatient != null)
+                System.out.println("▶️  Now serving: " + currentPatient.name + " (#" + currentPatient.queueNumber + ")");
+            else
+                System.out.println("No one currently being served.");
+            if (queue.isEmpty()) System.out.println("No waiting patients.");
+            else for (Patient p : queue) System.out.println(" - " + p);
+        }
+    }
+
+    // --------------- Globals ----------------
+    private static final Map<String, Counter> counters = new LinkedHashMap<>();
+    private static final List<Patient> allPatients = new ArrayList<>();
+    private static int nextQueueNumber = 1;
+    private static boolean running = true;
+
+    // --------------- Announcement Simulation ----------------
+    private static void announce(Patient p) {
+        System.out.println("\n🔊 Calling patient: " + p.name + " (Queue #" + p.queueNumber + ") to " + p.counter);
+        SPEAKER.schedule(() -> {
+            System.out.println("🎤 [Speaker] 'Patient " + p.name + ", please proceed to " + p.counter + ".'");
+        }, 1, TimeUnit.SECONDS);
+    }
+
+    // --------------- Logging ----------------
+    private static void logToFile(String msg) {
+        try (FileWriter fw = new FileWriter(LOG_FILE, true)) {
+            fw.write(LocalDateTime.now().format(FMT) + " - " + msg + "\n");
+        } catch (IOException e) {
+            System.out.println("⚠️ Logging failed: " + e.getMessage());
+        }
+    }
+
+    // --------------- Menu Actions ----------------
+    private static void registerPatient() {
+        System.out.print("Enter patient name: ");
+        String name = SC.nextLine().trim();
+        if (name.isEmpty()) {
+            System.out.println("⚠️ Name cannot be empty.");
+            return;
+        }
+        Patient p = new Patient(nextQueueNumber++, name);
+        allPatients.add(p);
+
+        System.out.println("Available counters: " + counters.keySet());
+        System.out.print("Assign to counter: ");
+        String counterName = SC.nextLine().trim();
+        Counter c = counters.get(counterName);
+        if (c == null) {
+            System.out.println("⚠️ Invalid counter name.");
+            return;
+        }
+        c.addPatient(p);
+        System.out.println("✅ Patient registered: " + p.name + " (Queue #" + p.queueNumber + ")");
+        logToFile("New patient " + p.name + " assigned to " + counterName);
+    }
+
+    private static void addCounter() {
+        System.out.print("Enter counter name: ");
+        String name = SC.nextLine().trim();
+        if (name.isEmpty() || counters.containsKey(name)) {
+            System.out.println("⚠️ Invalid or duplicate counter name.");
+            return;
+        }
+        counters.put(name, new Counter(name));
+        System.out.println("✅ Counter " + name + " added.");
+    }
+
+    private static void callNext() {
+        Counter c = selectCounter();
+        if (c != null) c.callNext();
+    }
+
+    private static void recall() {
+        Counter c = selectCounter();
+        if (c != null) c.recall();
+    }
+
+    private static void finishServing() {
+        Counter c = selectCounter();
+        if (c != null) c.finishCurrent();
+    }
+
+    private static void showCounterQueue() {
+        Counter c = selectCounter();
+        if (c != null) c.showQueue();
+    }
+
+    private static void listAllPatients() {
+        if (allPatients.isEmpty()) {
+            System.out.println("No patients registered.");
+            return;
+        }
+        System.out.println("\n🏥 All Patients:");
+        allPatients.forEach(System.out::println);
+    }
+
+    private static Counter selectCounter() {
+        System.out.print("Enter counter name: ");
+        String name = SC.nextLine().trim();
+        Counter c = counters.get(name);
+        if (c == null) System.out.println("⚠️ Counter not found.");
+        return c;
+    }
+
+    // --------------- Menu System ----------------
+    private static void showMenu() {
+        System.out.println("""
+            -------------------------
+            🏥 Hospital Calling System
+            -------------------------
+            1. Add Counter
+            2. Register Patient
+            3. Call Next Patient
+            4. Recall Patient
+            5. Finish Current Patient
+            6. Show Counter Queue
+            7. Show All Patients
+            8. View Log
+            9. Help
+            0. Exit
+            -------------------------
+            """);
+    }
+
+    private static void viewLog() {
+        File f = new File(LOG_FILE);
+        if (!f.exists()) {
+            System.out.println("No logs yet.");
+            return;
+        }
+        System.out.println("\n📄 System Log:");
+        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = br.readLine()) != null)
+                System.out.println(line);
+        } catch (IOException e) {
+            System.out.println("⚠️ Error reading log: " + e.getMessage());
+        }
+    }
+
+    private static void help() {
+        System.out.println("""
+            📘 Help:
+             - Each counter has its own patient queue.
+             - Register new patients and assign them to a counter.
+             - Use 'Call Next' to call the next waiting patient.
+             - 'Recall' repeats the call announcement.
+             - 'Finish' marks the patient as done.
+             - Logs are automatically saved to a text file.
+            """);
+    }
+
+    private static void exitApp() {
+        running = false;
+        SPEAKER.shutdownNow();
+        System.out.println("👋 System shutting down...");
+    }
+
+    // --------------- Main ----------------
+    public static void main(String[] args) {
+        System.out.println("🏥 Welcome to Hospital Calling System!");
+        counters.put("Counter-A", new Counter("Counter-A"));
+        counters.put("Counter-B", new Counter("Counter-B"));
+
+        while (running) {
+            showMenu();
+            System.out.print("Select option: ");
+            String choice = SC.nextLine().trim();
+            switch (choice) {
+                case "1" -> addCounter();
+                case "2" -> registerPatient();
+                case "3" -> callNext();
+                case "4" -> recall();
+                case "5" -> finishServing();
+                case "6" -> showCounterQueue();
+                case "7" -> listAllPatients();
+                case "8" -> viewLog();
+                case "9" -> help();
+                case "0" -> exitApp();
+                default -> System.out.println("❓ Invalid input.");
+            }
+        }
+    }
+}
