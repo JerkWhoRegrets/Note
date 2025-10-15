@@ -1,0 +1,220 @@
+import java.io.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.*;
+
+/**
+ * 🎬 Cinema Ticket Booking System (~310 lines)
+ * Simulates concurrent seat bookings with multiple shows.
+ * Demonstrates synchronization, concurrency, and I/O.
+ */
+public class CinemaBookingSystem {
+
+    private static final Scanner SC = new Scanner(System.in);
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final String LOG_FILE = "bookings.log";
+
+    // -------------- Data Models -----------------
+    static class Show {
+        final String movie;
+        final LocalDateTime time;
+        final Seat[][] seats;
+
+        Show(String movie, LocalDateTime time, int rows, int cols) {
+            this.movie = movie;
+            this.time = time;
+            this.seats = new Seat[rows][cols];
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    seats[r][c] = new Seat(r, c);
+        }
+
+        synchronized boolean bookSeat(int r, int c, String name) {
+            if (r < 0 || r >= seats.length || c < 0 || c >= seats[0].length)
+                return false;
+            Seat seat = seats[r][c];
+            if (seat.booked) return false;
+            seat.booked = true;
+            seat.bookedBy = name;
+            logToFile(name + " booked seat (" + (r + 1) + "," + (c + 1) + ") for " + movie + " @ " + time.format(FMT));
+            return true;
+        }
+
+        void display() {
+            System.out.println("\n🎞️  " + movie + " | " + time.format(FMT));
+            System.out.print("   ");
+            for (int c = 0; c < seats[0].length; c++) System.out.printf("%3d", c + 1);
+            System.out.println();
+            for (int r = 0; r < seats.length; r++) {
+                System.out.printf("%2d ", r + 1);
+                for (int c = 0; c < seats[0].length; c++) {
+                    System.out.print(seats[r][c].booked ? " X " : " O ");
+                }
+                System.out.println();
+            }
+        }
+
+        List<String> getAvailableSeats() {
+            List<String> list = new ArrayList<>();
+            for (int r = 0; r < seats.length; r++)
+                for (int c = 0; c < seats[0].length; c++)
+                    if (!seats[r][c].booked)
+                        list.add((r + 1) + "-" + (c + 1));
+            return list;
+        }
+    }
+
+    static class Seat {
+        final int row, col;
+        boolean booked = false;
+        String bookedBy = "";
+
+        Seat(int r, int c) {
+            row = r; col = c;
+        }
+    }
+
+    // -------------- Globals -----------------
+    private static final Map<Integer, Show> shows = new LinkedHashMap<>();
+    private static final ExecutorService SIMULATOR = Executors.newCachedThreadPool();
+    private static boolean running = true;
+
+    // -------------- File Logging -----------------
+    private static void logToFile(String msg) {
+        try (FileWriter fw = new FileWriter(LOG_FILE, true)) {
+            fw.write(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + " - " + msg + "\n");
+        } catch (IOException e) {
+            System.out.println("⚠️ Failed to write log: " + e.getMessage());
+        }
+    }
+
+    private static void showLog() {
+        try (BufferedReader br = new BufferedReader(new FileReader(LOG_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) System.out.println(line);
+        } catch (IOException e) {
+            System.out.println("No logs yet.");
+        }
+    }
+
+    // -------------- Menu Operations -----------------
+    private static void initShows() {
+        shows.put(1, new Show("Inception", LocalDateTime.now().plusHours(1), 5, 6));
+        shows.put(2, new Show("Interstellar", LocalDateTime.now().plusHours(3), 5, 6));
+        shows.put(3, new Show("Oppenheimer", LocalDateTime.now().plusHours(5), 5, 6));
+    }
+
+    private static void listShows() {
+        System.out.println("\n📅 Available Shows:");
+        for (var e : shows.entrySet())
+            System.out.printf("%d. %s @ %s%n", e.getKey(), e.getValue().movie, e.getValue().time.format(FMT));
+    }
+
+    private static void displaySeats() {
+        listShows();
+        System.out.print("Select show number: ");
+        int id = safeIntInput();
+        Show s = shows.get(id);
+        if (s == null) { System.out.println("Invalid."); return; }
+        s.display();
+    }
+
+    private static void bookSeat() {
+        listShows();
+        System.out.print("Enter show number: ");
+        int id = safeIntInput();
+        Show s = shows.get(id);
+        if (s == null) { System.out.println("Invalid."); return; }
+        s.display();
+
+        System.out.print("Enter your name: ");
+        String name = SC.nextLine();
+        System.out.print("Enter row: ");
+        int r = safeIntInput() - 1;
+        System.out.print("Enter column: ");
+        int c = safeIntInput() - 1;
+
+        boolean ok = s.bookSeat(r, c, name);
+        if (ok) System.out.println("✅ Booking confirmed!");
+        else System.out.println("🚫 Seat not available.");
+    }
+
+    private static void simulateRandomBookings() {
+        System.out.print("Number of simulated users: ");
+        int n = safeIntInput();
+        for (int i = 0; i < n; i++) {
+            SIMULATOR.submit(() -> {
+                Random rnd = new Random();
+                int showId = rnd.nextInt(shows.size()) + 1;
+                Show s = shows.get(showId);
+                List<String> free = s.getAvailableSeats();
+                if (free.isEmpty()) return;
+                String[] pos = free.get(rnd.nextInt(free.size())).split("-");
+                s.bookSeat(Integer.parseInt(pos[0]) - 1, Integer.parseInt(pos[1]) - 1, "SimUser-" + Thread.currentThread().getId());
+            });
+        }
+        System.out.println("🤖 Simulating " + n + " concurrent bookings...");
+    }
+
+    private static void availableSeats() {
+        listShows();
+        System.out.print("Select show: ");
+        int id = safeIntInput();
+        Show s = shows.get(id);
+        if (s == null) return;
+        System.out.println("Available seats: " + s.getAvailableSeats());
+    }
+
+    private static void showMenu() {
+        System.out.println("""
+            -------------------------
+            🎬 Cinema Ticket System
+            -------------------------
+            1. View Shows
+            2. Display Seat Map
+            3. Book a Seat
+            4. View Available Seats
+            5. Simulate Random Bookings
+            6. View Booking Log
+            0. Exit
+            -------------------------
+            """);
+    }
+
+    private static int safeIntInput() {
+        try {
+            return Integer.parseInt(SC.nextLine());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    // -------------- Main -----------------
+    public static void main(String[] args) {
+        initShows();
+        System.out.println("🎟️ Welcome to the Cinema Ticket Booking System!");
+
+        while (running) {
+            showMenu();
+            System.out.print("Select option: ");
+            String choice = SC.nextLine();
+            switch (choice) {
+                case "1" -> listShows();
+                case "2" -> displaySeats();
+                case "3" -> bookSeat();
+                case "4" -> availableSeats();
+                case "5" -> simulateRandomBookings();
+                case "6" -> showLog();
+                case "0" -> exit();
+                default -> System.out.println("❓ Invalid option.");
+            }
+        }
+    }
+
+    private static void exit() {
+        running = false;
+        SIMULATOR.shutdownNow();
+        System.out.println("👋 Exiting system. Goodbye!");
+    }
+}
