@@ -1,0 +1,407 @@
+import java.io.*;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * SensorNetworkSimulator (fixed)
+ *
+ * - Sensors implement Runnable and provide run()
+ * - start() schedules this Runnable with the scheduler
+ * - Hub ingests readings from a BlockingQueue and logs/alerts
+ */
+public class SensorNetworkSimulator {
+
+    // -------------------------
+    // Data models
+    // -------------------------
+    enum SensorType { TEMPERATURE, HUMIDITY, MOTION }
+
+    static class Reading {
+        final String sensorId;
+        final SensorType type;
+        final double value; // degrees C, % or 1.0 for motion
+        final LocalDateTime timestamp;
+
+        Reading(String sensorId, SensorType type, double value) {
+            this.sensorId = sensorId;
+            this.type = type;
+            this.value = value;
+            this.timestamp = LocalDateTime.now();
+        }
+
+        @Override
+        public String toString() {
+            return String.format("[%s] %s %s = %.2f", timestamp.format(DateTimeFormatter.ISO_LOCAL_TIME),
+                    sensorId, type, value);
+        }
+    }
+
+    // -------------------------
+    // Sensor
+    // -------------------------
+    static abstract class Sensor implements Runnable {
+        final String id;
+        final SensorType type;
+        final BlockingQueue<Reading> outQueue;
+        final ScheduledExecutorService scheduler;
+        ScheduledFuture<?> future;
+        volatile boolean active = true;
+        volatile int intervalSeconds = 5; // default publish interval
+
+        Sensor(String id, SensorType type, BlockingQueue<Reading> outQueue, ScheduledExecutorService scheduler) {
+            this.id = id;
+            this.type = type;
+            this.outQueue = outQueue;
+            this.scheduler = scheduler;
+        }
+
+        abstract double readValue();
+
+        /**
+         * run() is invoked by the scheduler. We keep run() short and let the scheduler
+         * control repetition; run() publishes one reading per invocation.
+         */
+        @Override
+        public void run() {
+            if (!active) return;
+            double v = readValue();
+            Reading r = new Reading(id, type, v);
+            try {
+                outQueue.put(r);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        /**
+         * Schedule this Sensor with the scheduler using scheduleAtFixedRate.
+         */
+        void start() {
+            // If already scheduled, cancel and reschedule with new interval
+            if (future != null && !future.isCancelled()) future.cancel(true);
+            future = scheduler.scheduleAtFixedRate(this, 0, Math.max(1, intervalSeconds), TimeUnit.SECONDS);
+            active = true;
+        }
+
+        void stop() {
+            active = false;
+            if (future != null) future.cancel(true);
+        }
+
+        void resume() {
+            if (!active) {
+                active = true;
+                start();
+            }
+        }
+
+        void setInterval(int seconds) {
+            intervalSeconds = Math.max(1, seconds);
+            // reschedule with updated interval
+            if (future != null) {
+                future.cancel(true);
+                start();
+            }
+        }
+    }
+
+    static class TemperatureSensor extends Sensor {
+        private final Random rnd = new Random();
+        private final double base;
+
+        TemperatureSensor(String id, double base, BlockingQueue<Reading> q, ScheduledExecutorService s) {
+            super(id, SensorType.TEMPERATURE, q, s);
+            this.base = base;
+        }
+
+        @Override
+        double readValue() {
+            double noise = rnd.nextGaussian() * 1.2;
+            if (rnd.nextDouble() < 0.02) noise += rnd.nextDouble() * 10; // rare spike
+            return base + noise;
+        }
+    }
+
+    static class HumiditySensor extends Sensor {
+        private final Random rnd = new Random();
+        private final double base;
+
+        HumiditySensor(String id, double base, BlockingQueue<Reading> q, ScheduledExecutorService s) {
+            super(id, SensorType.HUMIDITY, q, s);
+            this.base = base;
+        }
+
+        @Override
+        double readValue() {
+            double noise = rnd.nextGaussian() * 3;
+            return Math.max(0.0, Math.min(100.0, base + noise));
+        }
+    }
+
+    static class MotionSensor extends Sensor {
+        private final Random rnd = new Random();
+
+        MotionSensor(String id, BlockingQueue<Reading> q, ScheduledExecutorService s) {
+            super(id, SensorType.MOTION, q, s);
+            this.intervalSeconds = 3;
+        }
+
+        @Override
+        double readValue() {
+            return rnd.nextDouble() < 0.1 ? 1.0 : 0.0;
+        }
+    }
+
+    // -------------------------
+    // Hub: consumes readings
+    // -------------------------
+    static class Hub {
+        private final BlockingQueue<Reading> queue;
+        private final ExecutorService processor = Executors.newSingleThreadExecutor();
+        private final List<String> alerts = Collections.synchronizedList(new ArrayList<>());
+        private final AtomicInteger processed = new AtomicInteger(0);
+        private volatile boolean running = true;
+        private final File logFile;
+
+        Hub(BlockingQueue<Reading> queue, String logFilename) {
+            this.queue = queue;
+            this.logFile = new File(logFilename);
+            processor.submit(this::processLoop);
+        }
+
+        private void logEvent(String msg) {
+            String line = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + " - " + msg;
+            synchronized (logFile) {
+                try (FileWriter fw = new FileWriter(logFile, true)) {
+                    fw.write(line + "\n");
+                } catch (IOException e) {
+                    System.out.println("Logging failed: " + e.getMessage());
+                }
+            }
+        }
+
+        private void processLoop() {
+            while (running) {
+                try {
+                    Reading r = queue.poll(1, TimeUnit.SECONDS);
+                    if (r == null) continue;
+                    processed.incrementAndGet();
+                    // simple rules
+                    if (r.type == SensorType.TEMPERATURE) {
+                        if (r.value > 40.0) {
+                            String a = "ALERT: High temp at " + r.sensorId + " value=" + r.value;
+                            alerts.add(a);
+                            System.out.println(a);
+                            logEvent(a);
+                        }
+                    } else if (r.type == SensorType.HUMIDITY) {
+                        if (r.value < 15.0) {
+                            String a = "ALERT: Low humidity at " + r.sensorId + " value=" + r.value;
+                            alerts.add(a);
+                            System.out.println(a);
+                            logEvent(a);
+                        }
+                    } else if (r.type == SensorType.MOTION) {
+                        if (r.value >= 1.0) {
+                            String a = "EVENT: Motion detected by " + r.sensorId;
+                            alerts.add(a);
+                            System.out.println(a);
+                            logEvent(a);
+                        }
+                    }
+                    // always log the reading
+                    logEvent("READING: " + r.toString());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+
+        void shutdown() {
+            running = false;
+            processor.shutdownNow();
+        }
+
+        int getProcessedCount() { return processed.get(); }
+
+        List<String> getRecentAlerts(int max) {
+            synchronized (alerts) {
+                int from = Math.max(0, alerts.size() - max);
+                return new ArrayList<>(alerts.subList(from, alerts.size()));
+            }
+        }
+
+        void manualCheck() {
+            System.out.println("Manual hub check: processed=" + getProcessedCount());
+            List<String> recent = getRecentAlerts(10);
+            if (recent.isEmpty()) System.out.println("No alerts.");
+            else recent.forEach(System.out::println);
+        }
+    }
+
+    // -------------------------
+    // Manager and Console UI
+    // -------------------------
+    private final Map<String, Sensor> sensors = new ConcurrentHashMap<>();
+    private final BlockingQueue<Reading> queue = new LinkedBlockingQueue<>(500);
+    private final ScheduledExecutorService sensorScheduler = Executors.newScheduledThreadPool(10);
+    private final Hub hub = new Hub(queue, "events.log");
+    private final Scanner sc = new Scanner(System.in);
+    private final AtomicInteger idCounter = new AtomicInteger(1);
+
+    SensorNetworkSimulator() {
+        // seed with a few sensors
+        addSensor(SensorType.TEMPERATURE, 22.0, 5);
+        addSensor(SensorType.HUMIDITY, 45.0, 7);
+        addSensor(SensorType.MOTION, 0.0, 3);
+    }
+
+    private String nextId(SensorType t) {
+        return t.name().charAt(0) + String.valueOf(idCounter.getAndIncrement());
+    }
+
+    void addSensor(SensorType type, double base, int intervalSeconds) {
+        String id = nextId(type);
+        Sensor s;
+        if (type == SensorType.TEMPERATURE) s = new TemperatureSensor(id, base, queue, sensorScheduler);
+        else if (type == SensorType.HUMIDITY) s = new HumiditySensor(id, base, queue, sensorScheduler);
+        else s = new MotionSensor(id, queue, sensorScheduler);
+        s.setInterval(intervalSeconds);
+        sensors.put(id, s);
+        s.start();
+        System.out.println("Added sensor: " + id + " type=" + type + " interval=" + intervalSeconds + "s");
+    }
+
+    void removeSensor(String id) {
+        Sensor s = sensors.remove(id);
+        if (s == null) System.out.println("Sensor not found.");
+        else {
+            s.stop();
+            System.out.println("Removed sensor " + id);
+        }
+    }
+
+    void listSensors() {
+        if (sensors.isEmpty()) {
+            System.out.println("No sensors configured.");
+            return;
+        }
+        System.out.println("Configured sensors:");
+        sensors.forEach((k, v) -> System.out.printf("- %s type=%s interval=%ds active=%s%n",
+                k, v.type, v.intervalSeconds, v.active));
+    }
+
+    void pauseSensor(String id) {
+        Sensor s = sensors.get(id);
+        if (s == null) System.out.println("Not found.");
+        else {
+            s.stop();
+            System.out.println("Paused " + id);
+        }
+    }
+
+    void resumeSensor(String id) {
+        Sensor s = sensors.get(id);
+        if (s == null) System.out.println("Not found.");
+        else {
+            s.resume();
+            System.out.println("Resumed " + id);
+        }
+    }
+
+    void changeInterval(String id, int seconds) {
+        Sensor s = sensors.get(id);
+        if (s == null) System.out.println("Not found.");
+        else {
+            s.setInterval(seconds);
+            System.out.println("Updated interval for " + id + " to " + seconds + "s");
+        }
+    }
+
+    void simulateLoad(int numThreads, int bookings) {
+        ExecutorService sim = Executors.newFixedThreadPool(numThreads);
+        Runnable job = () -> {
+            Random rnd = new Random();
+            for (int i = 0; i < bookings; i++) {
+                List<String> ids = new ArrayList<>(sensors.keySet());
+                if (ids.isEmpty()) return;
+                String sid = ids.get(rnd.nextInt(ids.size()));
+                Sensor s = sensors.get(sid);
+                if (s == null) continue;
+                double v = s.readValue();
+                try { queue.put(new Reading(sid, s.type, v)); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
+        };
+        for (int i = 0; i < numThreads; i++) sim.submit(job);
+        sim.shutdown();
+    }
+
+    void runConsole() {
+        System.out.println("=== IoT Sensor Network Simulator ===");
+        System.out.println("Commands: add / remove / list / pause / resume / interval / stats / manual / simulate / quit");
+        while (true) {
+            System.out.print("> ");
+            String line = sc.nextLine().trim();
+            if (line.isEmpty()) continue;
+            String[] parts = line.split("\\s+");
+            String cmd = parts[0].toLowerCase();
+            try {
+                switch (cmd) {
+                    case "add" -> {
+                        if (parts.length < 3) {
+                            System.out.println("Usage: add <type> <base> [intervalSeconds]");
+                            break;
+                        }
+                        SensorType t = SensorType.valueOf(parts[1].toUpperCase());
+                        double base = Double.parseDouble(parts[2]);
+                        int iv = parts.length >= 4 ? Integer.parseInt(parts[3]) : 5;
+                        addSensor(t, base, iv);
+                    }
+                    case "remove" -> {
+                        if (parts.length < 2) { System.out.println("Usage: remove <id>"); break; }
+                        removeSensor(parts[1]);
+                    }
+                    case "list" -> listSensors();
+                    case "pause" -> { if (parts.length<2) {System.out.println("pause <id>"); break;} pauseSensor(parts[1]); }
+                    case "resume" -> { if (parts.length<2) {System.out.println("resume <id>"); break;} resumeSensor(parts[1]); }
+                    case "interval" -> { if (parts.length<3) {System.out.println("interval <id> <sec>"); break;} changeInterval(parts[1], Integer.parseInt(parts[2])); }
+                    case "stats" -> hub.manualCheck();
+                    case "manual" -> hub.manualCheck();
+                    case "simulate" -> {
+                        int threads = parts.length>=2 ? Integer.parseInt(parts[1]) : 5;
+                        int msgs = parts.length>=3 ? Integer.parseInt(parts[2]) : 50;
+                        simulateLoad(threads, msgs);
+                        System.out.println("Simulating load: threads=" + threads + " msgs=" + msgs);
+                    }
+                    case "quit" -> {
+                        shutdown();
+                        return;
+                    }
+                    default -> System.out.println("Unknown. Commands: add/remove/list/pause/resume/interval/stats/simulate/quit");
+                }
+            } catch (Exception e) {
+                System.out.println("Error: " + e.getMessage());
+            }
+        }
+    }
+
+    void shutdown() {
+        System.out.println("Shutting down sensors and hub...");
+        sensors.values().forEach(Sensor::stop);
+        sensorScheduler.shutdownNow();
+        hub.shutdown();
+        System.out.println("Goodbye.");
+    }
+
+    // -------------------------
+    // Main
+    // -------------------------
+    public static void main(String[] args) {
+        SensorNetworkSimulator sim = new SensorNetworkSimulator();
+        sim.runConsole();
+    }
+}
