@@ -1,0 +1,82 @@
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.util.Arrays;
+
+class Solution {
+
+    static class FastScanner {
+        private final BufferedInputStream input = new BufferedInputStream(System.in);
+        private final byte[] buffer = new byte[1 << 16];
+        private int pointer = 0;
+        private int length = 0;
+
+        private int read() throws IOException {
+            if (pointer >= length) {
+                length = input.read(buffer);
+                pointer = 0;
+                if (length <= 0) {
+                    return -1;
+                }
+            }
+            return buffer[pointer++];
+        }
+
+        int nextInt() throws IOException {
+            int c;
+            do {
+                c = read();
+            } while (c <= ' ' && c != -1);
+
+            int value = 0;
+            while (c > ' ') {
+                value = value * 10 + (c - '0');
+                c = read();
+            }
+            return value;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        FastScanner scanner = new FastScanner();
+
+        int num = scanner.nextInt();
+        scanner.nextInt();
+
+        long[] houses = new long[num];
+
+        for (int i = 0; i < num; i++) {
+            int houseNumber = scanner.nextInt();
+            int position = scanner.nextInt();
+
+            houses[i] = ((long) position << 20) | houseNumber;
+        }
+
+        Arrays.sort(houses);
+
+        int bestGap = -1;
+        int bestStartPosition = Integer.MAX_VALUE;
+        int firstHouse = 0;
+        int secondHouse = 0;
+
+        for (int i = 1; i < num; i++) {
+            int previousPosition = (int) (houses[i - 1] >> 20);
+            int currentPosition = (int) (houses[i] >> 20);
+            int gap = currentPosition - previousPosition;
+
+            if (gap > bestGap || (gap == bestGap && previousPosition < bestStartPosition)) {
+                bestGap = gap;
+                bestStartPosition = previousPosition;
+                firstHouse = (int) (houses[i - 1] & ((1 << 20) - 1));
+                secondHouse = (int) (houses[i] & ((1 << 20) - 1));
+            }
+        }
+
+        if (firstHouse > secondHouse) {
+            int temp = firstHouse;
+            firstHouse = secondHouse;
+            secondHouse = temp;
+        }
+
+        System.out.println(firstHouse + " " + secondHouse);
+    }
+}
