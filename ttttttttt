@@ -1,0 +1,119 @@
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+class Solution {
+
+    static class FastScanner {
+        private final BufferedInputStream in = new BufferedInputStream(System.in);
+        private final byte[] buffer = new byte[1 << 16];
+        private int ptr = 0, len = 0;
+
+        private int read() throws IOException {
+            if (ptr >= len) {
+                len = in.read(buffer);
+                ptr = 0;
+                if (len <= 0) return -1;
+            }
+            return buffer[ptr++];
+        }
+
+        int nextInt() throws IOException {
+            int c;
+            do {
+                c = read();
+            } while (c <= ' ' && c != -1);
+
+            int sign = 1;
+            if (c == '-') {
+                sign = -1;
+                c = read();
+            }
+
+            int value = 0;
+            while (c > ' ') {
+                value = value * 10 + (c - '0');
+                c = read();
+            }
+            return value * sign;
+        }
+    }
+
+    static class FenwickTree {
+        private final long[] tree;
+
+        FenwickTree(int size) {
+            tree = new long[size + 2];
+        }
+
+        void add(int index, long value) {
+            index++;
+            while (index < tree.length) {
+                tree[index] += value;
+                index += index & -index;
+            }
+        }
+
+        long sum(int index) {
+            index++;
+            long result = 0;
+            while (index > 0) {
+                result += tree[index];
+                index -= index & -index;
+            }
+            return result;
+        }
+
+        long rangeSum(int left, int right) {
+            if (left > right) {
+                int temp = left;
+                left = right;
+                right = temp;
+            }
+            left = Math.max(left, 0);
+            right = Math.min(right, tree.length - 2);
+
+            if (left > right) return 0;
+
+            return sum(right) - (left == 0 ? 0 : sum(left - 1));
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        FastScanner scanner = new FastScanner();
+
+        int customers = scanner.nextInt();
+        int queries = scanner.nextInt();
+
+        FenwickTree fenwickTree = new FenwickTree(customers);
+        List<Long> answers = new ArrayList<>();
+
+        for (int i = 0; i < queries; i++) {
+            int type = scanner.nextInt();
+            int second = scanner.nextInt();
+            int third = scanner.nextInt();
+
+            if (type == 1) {
+                int customerId = second;
+                int quantity = third;
+                fenwickTree.add(customerId, quantity);
+            } else if (type == 2) {
+                int startId = second;
+                int endId = third;
+                answers.add(fenwickTree.rangeSum(startId, endId));
+            }
+        }
+
+        StringBuilder output = new StringBuilder();
+        output.append("[");
+
+        for (int i = 0; i < answers.size(); i++) {
+            if (i > 0) output.append(",");
+            output.append(answers.get(i));
+        }
+
+        output.append("]");
+        System.out.print(output.toString());
+    }
+}
