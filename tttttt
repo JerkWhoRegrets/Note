@@ -1,0 +1,93 @@
+import java.io.*;
+import java.util.*;
+
+class Solution {
+
+    static class House {
+        int number;
+        int position;
+
+        House(int number, int position) {
+            this.number = number;
+            this.position = position;
+        }
+    }
+
+    static class FastScanner {
+        private final InputStream in = System.in;
+        private final byte[] buffer = new byte[1 << 16];
+        private int ptr = 0, len = 0;
+
+        private int read() throws IOException {
+            if (ptr >= len) {
+                len = in.read(buffer);
+                ptr = 0;
+                if (len <= 0) return -1;
+            }
+            return buffer[ptr++];
+        }
+
+        int nextInt() throws IOException {
+            int c;
+            do {
+                c = read();
+            } while (c <= ' ' && c != -1);
+
+            int sign = 1;
+            if (c == '-') {
+                sign = -1;
+                c = read();
+            }
+
+            int value = 0;
+            while (c > ' ') {
+                value = value * 10 + (c - '0');
+                c = read();
+            }
+            return value * sign;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        FastScanner fs = new FastScanner();
+
+        int num = fs.nextInt();
+        int val = fs.nextInt();
+
+        House[] houses = new House[num];
+
+        for (int i = 0; i < num; i++) {
+            int houseNumber = fs.nextInt();
+            int position = fs.nextInt();
+            houses[i] = new House(houseNumber, position);
+        }
+
+        Arrays.sort(houses, new Comparator<House>() {
+            public int compare(House a, House b) {
+                return Integer.compare(a.position, b.position);
+            }
+        });
+
+        int maxGap = -1;
+        int firstHouse = -1;
+        int secondHouse = -1;
+
+        for (int i = 0; i < num - 1; i++) {
+            int gap = houses[i + 1].position - houses[i].position;
+
+            if (gap > maxGap) {
+                maxGap = gap;
+                firstHouse = houses[i].number;
+                secondHouse = houses[i + 1].number;
+            }
+        }
+
+        if (firstHouse > secondHouse) {
+            int temp = firstHouse;
+            firstHouse = secondHouse;
+            secondHouse = temp;
+        }
+
+        System.out.println(firstHouse + " " + secondHouse);
+    }
+}
