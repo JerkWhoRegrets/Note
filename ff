@@ -1,0 +1,91 @@
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    static class FastScanner {
+        private final BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        private StringTokenizer st;
+
+        String next() throws IOException {
+            while (st == null || !st.hasMoreTokens()) {
+                String line = br.readLine();
+                if (line == null) return null;
+                st = new StringTokenizer(line);
+            }
+            return st.nextToken();
+        }
+
+        int nextInt() throws IOException {
+            return Integer.parseInt(next());
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        FastScanner fs = new FastScanner();
+
+        String first = fs.next();
+        if (first == null) return;
+
+        int n = Integer.parseInt(first);
+        int[] lights = new int[n];
+
+        for (int i = 0; i < n; i++) {
+            lights[i] = fs.nextInt();
+        }
+
+        int days = fs.nextInt();
+
+        Map<String, Integer> seen = new HashMap<Integer, Integer>();
+        List<int[]> states = new ArrayList<int[]>();
+
+        int day = 0;
+
+        while (day < days) {
+            String key = encode(lights);
+
+            if (seen.containsKey(key)) {
+                int cycleStart = seen.get(key);
+                int cycleLength = day - cycleStart;
+                int remaining = (days - day) % cycleLength;
+                lights = states.get(cycleStart + remaining);
+                break;
+            }
+
+            seen.put(key, day);
+            states.add(lights.clone());
+
+            lights = nextDay(lights);
+            day++;
+        }
+
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            if (i > 0) result.append(' ');
+            result.append(lights[i]);
+        }
+
+        System.out.println(result.toString());
+    }
+
+    private static int[] nextDay(int[] current) {
+        int n = current.length;
+        int[] next = new int[n];
+
+        for (int i = 0; i < n; i++) {
+            int left = i == 0 ? 0 : current[i - 1];
+            int right = i == n - 1 ? 0 : current[i + 1];
+
+            next[i] = left == right ? 0 : 1;
+        }
+
+        return next;
+    }
+
+    private static String encode(int[] lights) {
+        StringBuilder sb = new StringBuilder();
+        for (int value : lights) {
+            sb.append(value);
+        }
+        return sb.toString();
+    }
+}
