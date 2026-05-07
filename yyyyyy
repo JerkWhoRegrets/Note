@@ -1,0 +1,92 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
+
+class Solution {
+    public static void main(String args[]) throws Exception {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        String input = br.readLine();
+
+        if (input == null || input.trim().isEmpty()) {
+            return;
+        }
+
+        String network = input.trim();
+        int n = network.length();
+
+        List<List<Integer>> graph = new ArrayList<List<Integer>>();
+        for (int i = 0; i < n; i++) {
+            graph.add(new ArrayList<Integer>());
+        }
+
+        List<Integer> engineers = new ArrayList<Integer>();
+
+        for (int i = 0; i < n; i++) {
+            if (network.charAt(i) == '1') {
+                engineers.add(i);
+            }
+        }
+
+        for (int i = 0; i < n; i++) {
+            if (network.charAt(i) != '1') {
+                continue;
+            }
+
+            int left = 2 * i + 1;
+            int right = 2 * i + 2;
+
+            if (left < n && network.charAt(left) == '1') {
+                graph.get(i).add(left);
+                graph.get(left).add(i);
+            }
+
+            if (right < n && network.charAt(right) == '1') {
+                graph.get(i).add(right);
+                graph.get(right).add(i);
+            }
+        }
+
+        StringBuilder result = new StringBuilder();
+
+        for (int i = 0; i < engineers.size(); i++) {
+            int strength = findMaximumDistance(engineers.get(i), graph, network);
+
+            if (i > 0) {
+                result.append(" ");
+            }
+            result.append(strength);
+        }
+
+        System.out.print(result.toString());
+    }
+
+    private static int findMaximumDistance(int start, List<List<Integer>> graph, String network) {
+        int n = network.length();
+        boolean[] visited = new boolean[n];
+        int[] distance = new int[n];
+
+        Queue<Integer> queue = new ArrayDeque<Integer>();
+        queue.offer(start);
+        visited[start] = true;
+
+        int maxDistance = 0;
+
+        while (!queue.isEmpty()) {
+            int current = queue.poll();
+            maxDistance = Math.max(maxDistance, distance[current]);
+
+            for (int next : graph.get(current)) {
+                if (!visited[next]) {
+                    visited[next] = true;
+                    distance[next] = distance[current] + 1;
+                    queue.offer(next);
+                }
+            }
+        }
+
+        return maxDistance;
+    }
+}
