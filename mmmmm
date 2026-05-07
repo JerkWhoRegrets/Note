@@ -1,0 +1,115 @@
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    static int rows, cols;
+    static int[][] maze;
+    static boolean[][] visited;
+
+    static final int[] dr = {-1, 1, 0, 0};
+    static final int[] dc = {0, 0, -1, 1};
+
+    public static void main(String[] args) throws Exception {
+        FastScanner fs = new FastScanner(System.in);
+
+        rows = fs.nextInt();
+        cols = fs.nextInt();
+
+        maze = new int[rows][cols];
+        visited = new boolean[rows][cols];
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                maze[i][j] = fs.nextInt();
+            }
+        }
+
+        System.out.print(canReachCheese() ? 1 : 0);
+    }
+
+    static boolean canReachCheese() {
+        if (rows == 0 || cols == 0) {
+            return false;
+        }
+
+        if (maze[0][0] == 0) {
+            return false;
+        }
+
+        Queue<int[]> queue = new ArrayDeque<>();
+        queue.offer(new int[]{0, 0});
+        visited[0][0] = true;
+
+        while (!queue.isEmpty()) {
+            int[] current = queue.poll();
+            int r = current[0];
+            int c = current[1];
+
+            if (maze[r][c] == 9) {
+                return true;
+            }
+
+            for (int k = 0; k < 4; k++) {
+                int nr = r + dr[k];
+                int nc = c + dc[k];
+
+                if (isValid(nr, nc)) {
+                    visited[nr][nc] = true;
+                    queue.offer(new int[]{nr, nc});
+                }
+            }
+        }
+
+        return false;
+    }
+
+    static boolean isValid(int r, int c) {
+        return r >= 0 && r < rows
+                && c >= 0 && c < cols
+                && !visited[r][c]
+                && maze[r][c] != 0;
+    }
+
+    static class FastScanner {
+        private final InputStream in;
+        private final byte[] buffer = new byte[1 << 16];
+        private int ptr = 0;
+        private int len = 0;
+
+        FastScanner(InputStream is) {
+            in = is;
+        }
+
+        private int read() throws IOException {
+            if (ptr >= len) {
+                len = in.read(buffer);
+                ptr = 0;
+                if (len <= 0) {
+                    return -1;
+                }
+            }
+            return buffer[ptr++];
+        }
+
+        int nextInt() throws IOException {
+            int c;
+            do {
+                c = read();
+            } while (c <= ' ' && c != -1);
+
+            int sign = 1;
+            if (c == '-') {
+                sign = -1;
+                c = read();
+            }
+
+            int value = 0;
+            while (c > ' ') {
+                value = value * 10 + (c - '0');
+                c = read();
+            }
+
+            return value * sign;
+        }
+    }
+}
