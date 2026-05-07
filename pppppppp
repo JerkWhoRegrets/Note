@@ -1,0 +1,95 @@
+import java.util.*;
+
+public class Main {
+
+    static class Result {
+        long x;
+        long y;
+        long gcd;
+
+        Result(long x, long y, long gcd) {
+            this.x = x;
+            this.y = y;
+            this.gcd = gcd;
+        }
+    }
+
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+
+        long n = sc.nextLong();
+
+        long m1 = sc.nextLong();
+        long p1 = sc.nextLong();
+
+        long m2 = sc.nextLong();
+        long p2 = sc.nextLong();
+
+        if (n == 0) {
+            System.out.println(0);
+            return;
+        }
+
+        Result res = extendedGcd(m1, m2);
+        long g = res.gcd;
+
+        if (n % g != 0) {
+            return;
+        }
+
+        long multiplier = n / g;
+
+        long x0 = res.x * multiplier;
+        long y0 = res.y * multiplier;
+
+        long stepX = m2 / g;
+        long stepY = m1 / g;
+
+        long minT = ceilDiv(-x0, stepX);
+        long maxT = floorDiv(y0, stepY);
+
+        long slope = p1 * stepX - p2 * stepY;
+
+        long bestT;
+        if (slope >= 0) {
+            bestT = minT;
+        } else {
+            bestT = maxT;
+        }
+
+        long shopALots = x0 + stepX * bestT;
+        long shopBLots = y0 - stepY * bestT;
+
+        long answer = shopALots * p1 + shopBLots * p2;
+
+        System.out.println(answer);
+    }
+
+    private static Result extendedGcd(long a, long b) {
+        if (b == 0) {
+            return new Result(1, 0, a);
+        }
+
+        Result next = extendedGcd(b, a % b);
+
+        long x = next.y;
+        long y = next.x - (a / b) * next.y;
+
+        return new Result(x, y, next.gcd);
+    }
+
+    private static long floorDiv(long a, long b) {
+        long q = a / b;
+        long r = a % b;
+
+        if (r != 0 && ((a < 0) ^ (b < 0))) {
+            q--;
+        }
+
+        return q;
+    }
+
+    private static long ceilDiv(long a, long b) {
+        return -floorDiv(-a, b);
+    }
+}
