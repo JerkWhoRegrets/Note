@@ -1,0 +1,83 @@
+import java.io.*;
+import java.util.*;
+
+public class Solution {
+
+    private static class FastScanner {
+        private final InputStream input;
+        private final byte[] buffer = new byte[1 << 16];
+        private int ptr = 0, len = 0;
+
+        FastScanner(InputStream input) {
+            this.input = input;
+        }
+
+        private int read() throws IOException {
+            if (ptr >= len) {
+                len = input.read(buffer);
+                ptr = 0;
+                if (len <= 0) return -1;
+            }
+            return buffer[ptr++];
+        }
+
+        int nextInt() throws IOException {
+            int c;
+            do {
+                c = read();
+            } while (c <= ' ' && c != -1);
+
+            int sign = 1;
+            if (c == '-') {
+                sign = -1;
+                c = read();
+            }
+
+            int value = 0;
+            while (c > ' ') {
+                value = value * 10 + (c - '0');
+                c = read();
+            }
+            return value * sign;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        FastScanner fs = new FastScanner(System.in);
+
+        int n = fs.nextInt();
+        int m = fs.nextInt();
+
+        int[] first = new int[n];
+        int[] second = new int[m];
+
+        Set<Integer> firstSet = new HashSet<>();
+        Set<Integer> secondSet = new HashSet<>();
+
+        for (int i = 0; i < n; i++) {
+            first[i] = fs.nextInt();
+            firstSet.add(first[i]);
+        }
+
+        for (int i = 0; i < m; i++) {
+            second[i] = fs.nextInt();
+            secondSet.add(second[i]);
+        }
+
+        int count = 0;
+
+        for (int value : first) {
+            if (!secondSet.contains(value)) {
+                count++;
+            }
+        }
+
+        for (int value : second) {
+            if (!firstSet.contains(value)) {
+                count++;
+            }
+        }
+
+        System.out.print(count);
+    }
+}
