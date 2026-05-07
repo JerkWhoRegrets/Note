@@ -1,0 +1,116 @@
+import java.io.*;
+import java.util.*;
+
+class Solution {
+
+    static class House implements Comparable<House> {
+        int number;
+        int position;
+
+        House(int number, int position) {
+            this.number = number;
+            this.position = position;
+        }
+
+        public int compareTo(House other) {
+            return this.position - other.position;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        FastScanner fs = new FastScanner();
+
+        ArrayList<Integer> values = new ArrayList<Integer>();
+        int next;
+        while ((next = fs.nextInt()) != Integer.MIN_VALUE) {
+            values.add(next);
+        }
+
+        if (values.isEmpty()) {
+            return;
+        }
+
+        int n = values.get(0);
+
+        int startIndex;
+        if (values.size() == 1 + 2 * n) {
+            startIndex = 1;
+        } else {
+            startIndex = 2;
+        }
+
+        House[] houses = new House[n];
+
+        for (int i = 0; i < n; i++) {
+            int houseNumber = values.get(startIndex + i * 2);
+            int position = values.get(startIndex + i * 2 + 1);
+            houses[i] = new House(houseNumber, position);
+        }
+
+        Arrays.sort(houses);
+
+        int maxGap = -1;
+        int answerA = 0;
+        int answerB = 0;
+
+        for (int i = 1; i < n; i++) {
+            int gap = houses[i].position - houses[i - 1].position;
+
+            if (gap > maxGap) {
+                maxGap = gap;
+                answerA = houses[i - 1].number;
+                answerB = houses[i].number;
+            }
+        }
+
+        if (answerA > answerB) {
+            int temp = answerA;
+            answerA = answerB;
+            answerB = temp;
+        }
+
+        System.out.println(answerA + " " + answerB);
+    }
+
+    static class FastScanner {
+        private final InputStream in = System.in;
+        private final byte[] buffer = new byte[1 << 16];
+        private int ptr = 0;
+        private int len = 0;
+
+        private int read() throws IOException {
+            if (ptr >= len) {
+                len = in.read(buffer);
+                ptr = 0;
+                if (len <= 0) {
+                    return -1;
+                }
+            }
+            return buffer[ptr++];
+        }
+
+        int nextInt() throws IOException {
+            int c;
+            do {
+                c = read();
+                if (c == -1) {
+                    return Integer.MIN_VALUE;
+                }
+            } while (c <= ' ');
+
+            int sign = 1;
+            if (c == '-') {
+                sign = -1;
+                c = read();
+            }
+
+            int value = 0;
+            while (c > ' ') {
+                value = value * 10 + (c - '0');
+                c = read();
+            }
+
+            return value * sign;
+        }
+    }
+}
