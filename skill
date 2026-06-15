@@ -595,3 +595,121 @@ A good answer should allow a developer, tester, solution designer, or business a
 * what happens when source fields are missing or System APIs fail
 * which rules are confirmed by code
 * which assumptions or open questions need clarification
+
+Derivation logic documentation rule
+
+For any mapping classified as one of the following:
+
+* Derived mapping
+* Conditional mapping
+* Aggregated mapping
+* Split mapping
+* Enriched mapping
+* Format conversion
+* Type conversion
+
+The Logic / Rule section must document the detailed logic using bullet points.
+
+Do not summarize complex derivation logic in one sentence.
+
+For complex mappings, document:
+
+* source fields used
+* source location of each field
+* transformation steps
+* condition checks
+* priority order
+* fallback behavior
+* null or empty handling
+* default values
+* output construction rule
+* example input and output, where helpful
+
+Required style for Logic / Rule
+
+For simple direct mappings, one sentence is acceptable.
+
+Example:
+
+<td>Copy value directly from <code>request.customerId</code>.</td>
+
+For derived or conditional mappings, use bullet points inside the table cell.
+
+Example:
+
+<td>
+  <ul>
+    <li>Read <code>request.firstName</code> and <code>request.lastName</code>.</li>
+    <li>Trim both values.</li>
+    <li>If both values are present, concatenate them with a single space.</li>
+    <li>If only <code>firstName</code> is present, use <code>firstName</code>.</li>
+    <li>If only <code>lastName</code> is present, use <code>lastName</code>.</li>
+    <li>If both are missing, leave <code>systemRequest.fullName</code> unset.</li>
+  </ul>
+</td>
+
+Rule for critical derivation logic
+
+If a Process API response field is derived from multiple sources, such as the original Process API request plus one or more System API responses, the mapping table must include a concise rule, and the Cross-Source Derivation Logic section must include the full explanation.
+
+In the mapping table:
+
+<td>
+  <ul>
+    <li>Use <code>request.channel</code> to determine channel-specific eligibility rules.</li>
+    <li>Use <code>systemResponse.statusCode</code> to determine the base eligibility status.</li>
+    <li>Use <code>systemResponse.reasonCode</code> to populate the decline reason when eligibility is false.</li>
+    <li>See Cross-Source Derivation Logic: <code>eligible</code>.</li>
+  </ul>
+</td>
+
+In the Cross-Source Derivation Logic section:
+
+<h3>Field: <code>eligible</code></h3>
+<ul>
+  <li><strong>Target field:</strong> <code>processResponse.eligible</code></li>
+  <li><strong>Source fields:</strong>
+    <ul>
+      <li><code>request.channel</code></li>
+      <li><code>systemResponse.statusCode</code></li>
+      <li><code>systemResponse.reasonCode</code></li>
+    </ul>
+  </li>
+  <li><strong>Derivation rule:</strong>
+    <ul>
+      <li>If <code>systemResponse.statusCode = "00"</code>, set <code>eligible = true</code>.</li>
+      <li>If <code>systemResponse.statusCode != "00"</code>, set <code>eligible = false</code>.</li>
+      <li>If <code>eligible = false</code>, map <code>systemResponse.reasonCode</code> to <code>processResponse.reasonCode</code>.</li>
+      <li>If <code>request.channel = "MOBILE"</code>, apply mobile-specific eligibility handling if visible in the code.</li>
+    </ul>
+  </li>
+  <li><strong>Null handling:</strong>
+    <ul>
+      <li>If <code>systemResponse</code> is null, return the standard downstream failure response.</li>
+      <li>If <code>statusCode</code> is null, mark the behavior as unclear unless explicit handling is visible in the code.</li>
+    </ul>
+  </li>
+</ul>
+
+Anti-patterns
+
+Avoid these weak descriptions:
+
+<td>Derived from request fields.</td>
+<td>Mapped based on system response.</td>
+<td>Apply business logic.</td>
+<td>Convert status.</td>
+<td>Build JSON payload.</td>
+
+Replace them with explicit bullet-point rules.
+
+Success criteria for derivation logic
+
+A good derivation explanation should allow the reader to understand:
+
+* exactly which fields are used
+* in what order they are evaluated
+* what condition controls the mapping
+* what value is produced
+* what happens when source data is missing
+* whether the behavior is confirmed by code or still unclear
