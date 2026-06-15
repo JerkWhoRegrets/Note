@@ -1,0 +1,597 @@
+
+
+
+
+⸻
+
+name: endpoint-data-mapping-analysis
+description: Use this skill when analyzing existing code to document data mapping logic for a user-specified Process API endpoint, including Process API request to System API request mapping, System API response to Process API response mapping, field derivation, conditional mapping, and JSON construction logic. Always require the user to provide the endpoint name, operation name, HTTP method and path, controller method, service method, or request DTO before starting the analysis.
+
+Goal
+
+Analyze the existing codebase for one user-specified Process API endpoint and produce a single self-contained HTML document that explains the data mapping logic between the Process API and its downstream System APIs.
+
+The analysis must be scoped to the endpoint provided by the user. Do not begin by discovering or analyzing the full API journey across the codebase.
+
+Required user input
+
+Before starting analysis, ask the user to provide the target endpoint.
+
+The user should provide at least one of the following:
+
+* endpoint name
+* operation name
+* HTTP method and path, for example POST /v1/cards/eligibility
+* controller class and method name
+* service method name
+* request DTO name
+* requirement ID, ticket ID, or story reference
+
+If the user does not provide any endpoint identifier, ask:
+
+“Which endpoint should I analyze? Please provide the endpoint name, operation name, HTTP method and path, controller method, service method, request DTO, or requirement reference.”
+
+If the user provides a vague endpoint name and multiple matching endpoints are found, list the matching candidates and ask the user to choose one.
+
+Do not analyze multiple endpoints unless the user explicitly asks for a multi-endpoint comparison.
+
+Scope rule
+
+Once the endpoint is provided:
+
+1. Start from the provided endpoint identifier.
+2. Locate the corresponding controller, handler, route, or service method.
+3. Trace only the code path relevant to that endpoint.
+4. Identify downstream System API calls used by that endpoint.
+5. Document only the mappings relevant to that endpoint.
+6. Ignore unrelated endpoints, unrelated services, and unused mappers unless they are shared and directly invoked by the target endpoint.
+
+Apply this skill when
+
+Use this skill when the user asks to:
+
+* analyze mapping logic for a specific endpoint
+* document request or response mappings for a Process API
+* explain how one Process API endpoint calls downstream System APIs
+* identify one-to-one mappings
+* identify derived or transformed fields
+* explain fields derived from multiple sources
+* document JSON construction logic
+* prepare endpoint-level mapping documentation for technical design, testing, or implementation
+
+Do not apply this skill when
+
+Do not use this skill when the user is mainly asking about:
+
+* general code review
+* broad architecture discovery
+* full codebase exploration
+* performance tuning
+* infrastructure design
+* authentication or authorization flow
+* database schema design
+* UI behavior
+* deployment or DevOps changes
+
+Unless those topics directly affect the mapping logic of the specified endpoint.
+
+Analysis approach
+
+Follow this endpoint-first process.
+
+1. Confirm the target endpoint
+
+Confirm the exact endpoint being analyzed.
+
+Capture:
+
+* endpoint name
+* HTTP method and path
+* controller or handler method
+* request DTO
+* response DTO
+* main service method
+
+If any of these are unavailable, mark them as Not found or To be confirmed.
+
+2. Trace the endpoint-specific flow
+
+Starting from the specified endpoint, trace the execution path.
+
+Identify:
+
+* validation logic
+* header usage
+* path parameter usage
+* query parameter usage
+* request body usage
+* configuration usage
+* database lookup usage
+* cache lookup usage
+* downstream System API calls
+* response construction logic
+* error handling logic
+
+Do not expand into unrelated flows.
+
+3. Identify downstream System APIs
+
+For the specified endpoint only, list each downstream System API.
+
+For each System API, capture:
+
+* System API name
+* client class or adapter class
+* called method
+* request object
+* response object
+* call order
+* whether the call is mandatory or conditional
+* whether the call depends on a previous System API response
+
+4. Analyze Process API request to System API request mapping
+
+For each downstream System API request, identify:
+
+* direct one-to-one mappings
+* renamed fields
+* type conversions
+* format conversions
+* derived fields
+* constant or hardcoded values
+* default values
+* conditional fields
+* fields populated from headers
+* fields populated from path parameters
+* fields populated from query parameters
+* fields populated from configuration
+* fields populated from database lookup
+* fields populated from cache lookup
+* fields populated from previous System API responses
+
+5. Analyze System API response to Process API response mapping
+
+For the Process API response, identify:
+
+* direct one-to-one mappings
+* renamed fields
+* type conversions
+* format conversions
+* derived fields
+* combined fields
+* conditional response fields
+* suppressed fields
+* masked fields
+* enriched fields
+* reformatted fields
+
+6. Analyze cross-source derivation logic
+
+Check whether any Process API response field is derived from multiple sources, such as:
+
+* original Process API request
+* request headers
+* path parameters
+* query parameters
+* configuration
+* database result
+* cache result
+* System API A response
+* System API B response
+
+For each derived field, explain:
+
+* target field
+* source fields
+* derivation rule
+* priority rule
+* fallback rule
+* null-handling rule
+* example input and output, where useful
+
+7. Analyze error and edge-case behavior
+
+For the specified endpoint only, explain:
+
+* validation failure behavior
+* missing mandatory field behavior
+* null source field behavior
+* empty System API response behavior
+* failed System API response behavior
+* partial success behavior
+* timeout or exception behavior, if visible
+* fallback behavior
+* default response behavior
+* error mapping behavior
+
+Mapping classification
+
+Classify each mapping as one of the following:
+
+* Direct mapping
+* Renamed mapping
+* Type conversion
+* Format conversion
+* Constant value
+* Default value
+* Conditional mapping
+* Derived mapping
+* Aggregated mapping
+* Split mapping
+* Enriched mapping
+* Suppressed or ignored field
+* Masked field
+* Unknown or unclear mapping
+
+Required final output
+
+Return the final analysis as one single self-contained HTML document.
+
+Do not return plain Markdown as the final output.
+
+The HTML must be readable when opened directly in a browser.
+
+Use inline CSS inside a <style> block.
+
+Do not reference external CSS, JavaScript, images, or fonts.
+
+Required HTML sections
+
+The HTML document must contain these sections:
+
+1. Endpoint Summary
+2. Endpoint-Specific API Flow
+3. Downstream System APIs
+4. Process API Request to System API Request Mapping
+5. System API Response to Process API Response Mapping
+6. Cross-Source Derivation Logic
+7. JSON Construction Logic
+8. Conditional Mapping Rules
+9. Error and Edge-Case Handling
+10. Fields Not Mapped
+11. Open Questions / Unclear Logic
+12. Risks and Recommendations
+
+HTML template
+
+Use this template and populate it with the endpoint-specific analysis.
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Endpoint Data Mapping Analysis</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
+      margin: 32px;
+      color: #222;
+    }
+    h1, h2, h3 {
+      color: #1f2937;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+    }
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #f3f4f6;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    pre {
+      background: #f3f4f6;
+      padding: 12px;
+      overflow-x: auto;
+      border-radius: 6px;
+    }
+    .note {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .warning {
+      background: #fff7ed;
+      border-left: 4px solid #f97316;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .risk {
+      background: #fef2f2;
+      border-left: 4px solid #ef4444;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .success {
+      background: #f0fdf4;
+      border-left: 4px solid #22c55e;
+      padding: 12px;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+<h1>Endpoint Data Mapping Analysis</h1>
+<section>
+  <h2>1. Endpoint Summary</h2>
+  <table>
+    <tr>
+      <th>Item</th>
+      <th>Details</th>
+    </tr>
+    <tr>
+      <td>Endpoint Name</td>
+      <td><!-- endpoint name --></td>
+    </tr>
+    <tr>
+      <td>HTTP Method and Path</td>
+      <td><!-- method and path --></td>
+    </tr>
+    <tr>
+      <td>Controller / Handler</td>
+      <td><!-- controller or handler --></td>
+    </tr>
+    <tr>
+      <td>Main Service Method</td>
+      <td><!-- service method --></td>
+    </tr>
+    <tr>
+      <td>Request DTO</td>
+      <td><!-- request DTO --></td>
+    </tr>
+    <tr>
+      <td>Response DTO</td>
+      <td><!-- response DTO --></td>
+    </tr>
+  </table>
+</section>
+<section>
+  <h2>2. Endpoint-Specific API Flow</h2>
+  <ol>
+    <li><!-- Endpoint receives request --></li>
+    <li><!-- Validation / enrichment --></li>
+    <li><!-- System API call --></li>
+    <li><!-- Response mapping --></li>
+  </ol>
+</section>
+<section>
+  <h2>3. Downstream System APIs</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>System API</th>
+        <th>Client / Adapter</th>
+        <th>Method</th>
+        <th>Request Object</th>
+        <th>Response Object</th>
+        <th>Call Type</th>
+        <th>Dependency</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- system API name --></td>
+        <td><code><!-- client class --></code></td>
+        <td><code><!-- method --></code></td>
+        <td><code><!-- request object --></code></td>
+        <td><code><!-- response object --></code></td>
+        <td><!-- Mandatory / Conditional --></td>
+        <td><!-- Depends on previous call? --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>4. Process API Request to System API Request Mapping</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Source Location</th>
+        <th>Process API Source Field</th>
+        <th>System API Target Field</th>
+        <th>Mapping Type</th>
+        <th>Logic / Rule</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Request Body</td>
+        <td><code>request.customerId</code></td>
+        <td><code>systemRequest.customerReference</code></td>
+        <td>Renamed mapping</td>
+        <td>Copy value directly.</td>
+        <td>Mandatory field.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>5. System API Response to Process API Response Mapping</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>System API</th>
+        <th>System API Source Field</th>
+        <th>Process API Target Field</th>
+        <th>Mapping Type</th>
+        <th>Logic / Rule</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- System API name --></td>
+        <td><code>systemResponse.statusCode</code></td>
+        <td><code>processResponse.status</code></td>
+        <td>Format conversion</td>
+        <td>Map provider status code to Process API status enum.</td>
+        <td>Document status mapping separately if complex.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>6. Cross-Source Derivation Logic</h2>
+  <h3>Field: <!-- target field name --></h3>
+  <ul>
+    <li><strong>Target field:</strong> <code><!-- process response field --></code></li>
+    <li><strong>Source fields:</strong>
+      <ul>
+        <li><code><!-- process request field --></code></li>
+        <li><code><!-- request header --></code></li>
+        <li><code><!-- system response field --></code></li>
+      </ul>
+    </li>
+    <li><strong>Derivation rule:</strong> <!-- Explain step-by-step logic --></li>
+    <li><strong>Priority rule:</strong> <!-- Explain priority if multiple sources are available --></li>
+    <li><strong>Fallback rule:</strong> <!-- Explain fallback behavior --></li>
+    <li><strong>Null handling:</strong> <!-- Explain null or missing field behavior --></li>
+  </ul>
+</section>
+<section>
+  <h2>7. JSON Construction Logic</h2>
+  <pre><code>{
+  "customer": {
+    "id": "&lt;mapped from request.customerId&gt;",
+    "name": "&lt;derived from request.firstName + request.lastName&gt;"
+  },
+  "eligibility": {
+    "status": "&lt;derived from systemResponse.statusCode&gt;",
+    "reasonCode": "&lt;mapped from systemResponse.reasonCode&gt;"
+  }
+}</code></pre>
+  <ul>
+    <li><code>customer.id</code>: mapped from <code>request.customerId</code>.</li>
+    <li><code>customer.name</code>: derived by concatenating first name and last name.</li>
+    <li><code>eligibility.status</code>: derived from System API status code.</li>
+  </ul>
+</section>
+<section>
+  <h2>8. Conditional Mapping Rules</h2>
+  <ul>
+    <li><!-- Conditional rule 1 --></li>
+    <li><!-- Conditional rule 2 --></li>
+  </ul>
+</section>
+<section>
+  <h2>9. Error and Edge-Case Handling</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Scenario</th>
+        <th>Observed Behavior</th>
+        <th>Mapped Response / Error</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- Missing field / system API failure --></td>
+        <td><!-- behavior --></td>
+        <td><!-- response or error mapping --></td>
+        <td><!-- notes --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>10. Fields Not Mapped</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Source Field</th>
+        <th>Source Location</th>
+        <th>Reason Not Mapped</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>systemResponse.internalScore</code></td>
+        <td>System API Response</td>
+        <td>Internal-only field</td>
+        <td>Not exposed to Process API consumer.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>11. Open Questions / Unclear Logic</h2>
+  <ul>
+    <li><!-- Open question 1 --></li>
+    <li><!-- Open question 2 --></li>
+  </ul>
+</section>
+<section>
+  <h2>12. Risks and Recommendations</h2>
+  <div class="risk">
+    <strong>Risk:</strong> <!-- Risk description -->
+  </div>
+  <div class="note">
+    <strong>Recommendation:</strong> <!-- Recommendation -->
+  </div>
+</section>
+</body>
+</html>
+
+Style rules
+
+* Be endpoint-specific.
+* Use bullet points for flow and derivation logic.
+* Use tables for field-level mappings.
+* Use JSON examples when nested structures are involved.
+* Use <code> for field names, class names, method names, and constants.
+* Use <pre><code> for JSON structures.
+* Escape HTML special characters inside code blocks.
+* Be explicit about source and target fields.
+* Do not simply say “mapped from response”; explain the exact source field and logic.
+* Do not invent business rules that are not visible in the code.
+* If the code is unclear, mark it as an open question.
+* Distinguish confirmed code behavior from assumptions.
+* Keep the HTML suitable for a technical design document.
+
+What not to do
+
+Do not:
+
+* start by discovering the whole API journey
+* analyze all endpoints unless explicitly asked
+* proceed without an endpoint identifier
+* rewrite the implementation unless asked
+* assume all mappings are one-to-one
+* ignore fields derived from multiple sources
+* ignore null handling
+* ignore conditional logic
+* ignore error mapping
+* expose sensitive provider/internal fields in the Process API response without calling out the risk
+* merge request mapping and response mapping into one unclear explanation
+* produce plain Markdown as the final analysis
+* produce a vague summary without field-level details
+
+Success criteria
+
+A good answer should allow a developer, tester, solution designer, or business analyst to understand:
+
+* which endpoint was analyzed
+* which code path was traced
+* which downstream System APIs are called
+* which source fields populate which target fields
+* whether each mapping is direct, transformed, conditional, or derived
+* how complex response fields are constructed
+* what JSON structure is produced
+* what happens when source fields are missing or System APIs fail
+* which rules are confirmed by code
+* which assumptions or open questions need clarification
