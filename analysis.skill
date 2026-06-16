@@ -5,285 +5,139 @@
 ⸻
 
 name: endpoint-enhancement-impact-analysis
-description: Use this skill when the user provides a new requirement or enhancement request and wants Copilot to analyze an existing codebase to identify impacted endpoints, classes, methods, DTOs, mappers, validators, downstream System APIs, mapping logic, error handling, tests, and recommended implementation points. This skill focuses on where and how to enhance existing logic, not only on explaining the current behavior.
+description: Analyzes an existing codebase against a user-provided enhancement requirement to identify impacted endpoints, classes, methods, DTOs, mappers, validators, downstream system APIs, mapping logic, error handling, and tests. Use when users ask for impact analysis, change analysis, enhancement analysis, implementation points, affected components, or where and how to modify existing logic for a new requirement.
 
-Endpoint Enhancement Impact Analysis Skill
+Endpoint Enhancement Impact Analysis
 
-Goal
+Analyzes existing endpoint or feature logic together with a new requirement and provides actionable enhancement guidance.
 
-Analyze the existing codebase together with the new requirement provided by the user, then produce a clear enhancement impact analysis.
+The focus is not only to explain current behavior, but to identify:
 
-The analysis should explain:
+* where the enhancement should happen
+* what existing logic is impacted
+* what code components need to change
+* how request, response, mapping, validation, downstream API, and error handling are affected
+* what tests should be added or updated
 
-* what existing logic is relevant
-* where the enhancement should be implemented
-* which files, classes, methods, DTOs, mappers, validators, clients, and tests may be impacted
-* what new or changed logic is required
-* what risks, dependencies, and open questions exist
-* how to implement the change safely and clearly
+Required Inputs
 
-This skill is intended for endpoint-level or feature-level enhancement analysis.
+Before starting the analysis, confirm that the user has provided enough scope.
 
-Required User Input
+Required user inputs:
 
-Before starting the analysis, check whether the user has provided enough information.
-
-The user should provide at least:
-
-* target endpoint, feature name, operation name, or business flow
-* new requirement or enhancement description
-* expected behavior after the enhancement
-* known constraints, such as backward compatibility, no API contract change, no database change, or specific downstream provider behavior
+1. Target endpoint, feature, operation, or business flow
+    * Example: POST /v1/cards/eligibility
+    * Example: checkCardEligibility
+    * Example: CardEligibilityController#checkEligibility
+2. New requirement or enhancement description
+    * What behavior should be added or changed?
+    * What is the expected result?
+3. Known constraints, if any
+    * Backward compatibility required
+    * No public API contract change
+    * No database change
+    * Specific downstream system behavior
+    * Specific error-handling requirement
 
 If the endpoint, feature, or flow is missing, ask:
 
-Which endpoint, feature, or business flow should I analyze for this enhancement?
+Which endpoint, feature, operation, or business flow should I analyze for this enhancement?
 
 If the new requirement is missing or unclear, ask:
 
 What is the new requirement or expected behavior for this enhancement?
 
-If both are provided, proceed with the analysis.
+Do not start broad codebase discovery until the target scope and requirement are clear.
 
-Scope Rule
+Analysis Process
 
-This skill is enhancement-driven.
+1. Understand requirement
+    * Summarize the new requirement in plain language.
+    * Identify expected behavior.
+    * Identify trigger conditions.
+    * Identify changed inputs, outputs, mappings, validations, or downstream interactions.
+    * Mark unclear requirement details as open questions.
+2. Locate relevant existing flow
+    * Start from the user-provided endpoint, feature, operation, controller method, service method, or DTO.
+    * Trace only the relevant code path.
+    * Do not analyze unrelated endpoints unless they share directly reused logic.
+3. Identify current behavior
+    * Find how the current logic works.
+    * Identify controller, service, mapper, validator, client, adapter, configuration, and test classes.
+    * Identify current request mapping, response mapping, derivation logic, error handling, and downstream calls.
+4. Perform gap analysis
+    * Compare current behavior with required behavior.
+    * Identify missing logic, changed logic, incompatible logic, and reusable existing logic.
+    * Explain the gap clearly.
+5. Identify enhancement points
+    * Specify exactly where changes should happen.
+    * Include class names, method names, DTOs, mappers, validators, clients, adapters, and test classes where visible.
+    * Avoid vague statements such as “update service logic” or “change mapper”.
+6. Assess contract impact
+    * Check whether request fields, headers, path parameters, query parameters, response fields, status codes, or error schemas are affected.
+    * Clearly mark whether the change is backward compatible or potentially breaking.
+7. Assess downstream system API impact
+    * Check whether the enhancement requires:
+        * a new downstream API call
+        * changed downstream request mapping
+        * changed downstream response handling
+        * new provider fields
+        * new provider error codes
+        * changed call order
+        * conditional or fallback logic
+8. Analyze mapping and derivation changes
+    * Identify changed source fields and target fields.
+    * Document derivation logic in bullet points.
+    * Include condition checks, priority rules, fallback behavior, null handling, and default values.
+    * Do not summarize complex derivation logic in one vague sentence.
+9. Analyze error and edge cases
+    * Check validation failures.
+    * Check missing fields.
+    * Check invalid values.
+    * Check null or empty downstream responses.
+    * Check downstream failures, timeouts, and partial success.
+    * Recommend required error mapping changes.
+10. Identify test impact
+    * Recommend unit tests, mapper tests, validator tests, service tests, integration tests, contract tests, and regression tests.
+    * Tie each test case to a specific enhancement point.
 
-Do not analyze the entire codebase from scratch.
+Impact Categories
 
-Start from the user-provided endpoint, feature, operation, service method, or requirement.
+Classify each impact using these categories:
 
-Trace only the relevant code paths needed to assess the enhancement impact.
+* Controller / handler impact
+* Request DTO impact
+* Response DTO impact
+* Validation impact
+* Business rule impact
+* Mapper / assembler impact
+* Downstream client / adapter impact
+* Downstream request mapping impact
+* Downstream response handling impact
+* Error handling impact
+* Configuration impact
+* Database / cache impact
+* Logging / audit impact
+* Unit test impact
+* Integration test impact
+* Contract test impact
+* Documentation impact
 
-If multiple candidate endpoints or flows are found, list the candidates and ask the user to confirm the target scope before doing detailed analysis.
+Output Format
 
-Apply This Skill When
-
-Use this skill when the user asks to:
-
-* analyze the impact of a new requirement
-* identify where to implement an enhancement
-* compare new requirements against existing code logic
-* determine which classes, methods, DTOs, mappers, validators, or clients need changes
-* assess request or response contract changes
-* assess downstream System API impact
-* assess validation, mapping, business rule, or error-handling changes
-* prepare technical design notes for an enhancement
-* produce implementation guidance for developers
-* identify test cases required for a change
-
-Do Not Apply This Skill When
-
-Do not use this skill when the user only wants:
-
-* a pure explanation of existing mapping logic
-* a general code review
-* broad architecture exploration
-* performance tuning
-* deployment analysis
-* database design
-* frontend-only behavior
-* generic coding advice
-
-Unless those topics are directly related to the requested enhancement.
-
-Analysis Approach
-
-Follow this enhancement-first process.
-
-1. Understand the New Requirement
-
-Summarize the requirement in your own words.
-
-Identify:
-
-* requested business behavior
-* triggering condition
-* input changes
-* output changes
-* validation changes
-* mapping changes
-* downstream System API changes
-* error-handling changes
-* backward compatibility requirements
-* assumptions and unclear points
-
-Do not invent missing requirements. If something is unclear, mark it as an open question.
-
-2. Locate the Relevant Existing Flow
-
-Starting from the user-provided endpoint, feature, operation, or service method, identify:
-
-* controller or handler
-* request DTO
-* response DTO
-* main service method
-* validators
-* mappers or assemblers
-* downstream client or adapter classes
-* configuration usage
-* database or cache access
-* error-handling components
-* test classes
-
-Focus only on code paths relevant to the enhancement.
-
-3. Compare Current Behavior With Required Behavior
-
-Create a gap analysis between existing behavior and new required behavior.
-
-For each gap, document:
-
-* existing behavior
-* required behavior
-* impacted code location
-* recommended change
-* risk or dependency
-
-4. Identify Enhancement Points
-
-For each required change, identify exactly where the enhancement should happen.
-
-Classify enhancement points as:
-
-* controller or handler change
-* request DTO change
-* response DTO change
-* validation change
-* business rule change
-* mapping change
-* downstream System API request change
-* downstream System API response handling change
-* error mapping change
-* configuration change
-* database or cache change
-* logging or audit change
-* unit test change
-* integration test change
-* contract test change
-* documentation change
-
-5. Analyze Request Impact
-
-Check whether the enhancement requires changes to:
-
-* request body fields
-* headers
-* path parameters
-* query parameters
-* request validation
-* default values
-* backward compatibility
-* OpenAPI / Swagger contract
-* consumer expectations
-
-If the public request contract changes, clearly call it out as a contract impact.
-
-6. Analyze Response Impact
-
-Check whether the enhancement requires changes to:
-
-* response fields
-* response status
-* error response schema
-* field derivation logic
-* masking or suppression logic
-* null handling
-* default values
-* OpenAPI / Swagger contract
-* consumer expectations
-
-If the public response contract changes, clearly call it out as a contract impact.
-
-7. Analyze Downstream System API Impact
-
-Check whether the enhancement requires:
-
-* calling a new downstream System API
-* changing an existing System API request
-* using additional fields from an existing System API response
-* changing call order
-* adding conditional calls
-* adding fallback logic
-* handling new provider error codes
-* adding timeout or retry behavior
-* updating client models or adapters
-
-If the downstream provider behavior is unclear, mark it as an open question.
-
-8. Analyze Mapping and Derivation Changes
-
-For any changed mapping logic, document the enhancement in detail.
-
-For simple changes, one sentence is acceptable.
-
-For complex derivation logic, use bullet points.
-
-Document:
-
-* source fields
-* target fields
-* source location
-* transformation steps
-* condition checks
-* priority order
-* fallback behavior
-* null handling
-* default values
-* example input and output, where useful
-
-Do not write vague statements such as:
-
-* update mapping logic
-* apply business rules
-* change the mapper
-* derive from response
-
-9. Analyze Error Handling and Edge Cases
-
-Check whether the enhancement affects:
-
-* validation failure behavior
-* missing field behavior
-* invalid value behavior
-* downstream failure behavior
-* partial response behavior
-* null or empty response behavior
-* timeout behavior
-* fallback behavior
-* error code mapping
-* consumer-facing error messages
-
-Call out any missing error handling.
-
-10. Identify Tests Required
-
-Recommend test coverage for:
-
-* unit tests
-* mapper tests
-* validator tests
-* service tests
-* downstream client tests
-* integration tests
-* contract tests
-* regression tests
-* negative test cases
-* boundary test cases
-
-Tie each test recommendation to a specific enhancement point.
-
-Required Final Output
-
-Return the final enhancement analysis as one single self-contained HTML document.
+Return the final result as one self-contained HTML document.
 
 Do not return plain Markdown as the final analysis output.
 
-The HTML must be readable when opened directly in a browser.
+The HTML must:
 
-Use inline CSS inside a <style> block.
-
-Do not reference external CSS, JavaScript, images, or fonts.
+* be readable when opened directly in a browser
+* use inline CSS inside a <style> block
+* avoid external CSS, JavaScript, images, or fonts
+* use tables for impact analysis
+* use bullet points for detailed logic rules
+* use <code> for endpoint paths, field names, class names, method names, DTO names, and constants
+* use <pre><code> for JSON examples when needed
 
 Required HTML Sections
 
@@ -306,9 +160,47 @@ The HTML document must contain these sections:
 15. Risks and Recommendations
 16. Open Questions
 
+Derivation Logic Rule
+
+For any changed mapping classified as derived, conditional, aggregated, enriched, transformed, or cross-source, document the detailed logic using bullet points.
+
+The logic rule should include:
+
+* source fields
+* source location
+* target field
+* transformation steps
+* condition checks
+* priority order
+* fallback behavior
+* null or empty handling
+* default value
+* example input and output, if useful
+
+Good example:
+
+<td>
+  <ul>
+    <li>Read <code>request.channel</code> from the Process API request.</li>
+    <li>Read <code>systemResponse.statusCode</code> from the downstream eligibility response.</li>
+    <li>If <code>statusCode = "00"</code>, set <code>processResponse.eligible = true</code>.</li>
+    <li>If <code>statusCode != "00"</code>, set <code>processResponse.eligible = false</code>.</li>
+    <li>If <code>eligible = false</code>, map <code>systemResponse.reasonCode</code> to <code>processResponse.reasonCode</code>.</li>
+    <li>If <code>statusCode</code> is missing, mark the behavior as unclear unless explicit handling exists in the code.</li>
+  </ul>
+</td>
+
+Avoid weak descriptions such as:
+
+* Update mapping logic
+* Apply business rule
+* Derived from response
+* Mapped based on status
+* Change service logic
+
 HTML Template
 
-Use this template and populate it with the enhancement-specific analysis.
+Use this structure and populate it with the actual enhancement analysis.
 
 <!DOCTYPE html>
 <html lang="en">
@@ -693,26 +585,12 @@ Use this template and populate it with the enhancement-specific analysis.
 </body>
 </html>
 
-Style Rules
-
-* Focus on enhancement impact, not only current-state explanation.
-* Be specific about where changes should happen.
-* Use class names, method names, DTO names, mapper names, validator names, and client names where visible.
-* Use tables for impact analysis.
-* Use bullet points for detailed derivation logic.
-* Use <code> for field names, class names, method names, constants, and endpoint paths.
-* Use <pre><code> for JSON examples if request or response payload examples are needed.
-* Distinguish confirmed code behavior from assumptions.
-* Mark unclear requirement details as open questions.
-* Do not invent business rules that are not present in the requirement or code.
-* Keep the output suitable for a technical design or developer handover document.
-
 What Not To Do
 
 Do not:
 
 * only explain existing logic without identifying enhancement points
-* analyze the entire codebase without scope
+* analyze the entire codebase without a scoped endpoint, feature, or flow
 * proceed when both the target flow and requirement are missing
 * suggest broad refactoring unless required by the enhancement
 * change public API contracts silently
@@ -721,7 +599,7 @@ Do not:
 * ignore error-handling impact
 * ignore downstream System API impact
 * ignore test impact
-* provide vague statements such as “update service logic” or “change mapper”
+* provide vague statements such as update service logic or change mapper
 * produce plain Markdown as the final enhancement analysis
 
 Success Criteria
