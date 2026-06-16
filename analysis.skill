@@ -1,0 +1,731 @@
+
+
+
+
+⸻
+
+name: endpoint-enhancement-impact-analysis
+description: Use this skill when the user provides a new requirement or enhancement request and wants to analyze an existing codebase to identify impacted endpoints, classes, methods, mapping logic, downstream System APIs, validation rules, response changes, risks, and recommended implementation points. This skill focuses on where and how to enhance the existing logic, not only on explaining the current behavior.
+
+Goal
+
+Analyze the existing codebase together with the new requirement provided by the user, then produce a clear enhancement impact analysis.
+
+The output should explain:
+
+* what existing logic is relevant
+* where the enhancement should be implemented
+* which files, classes, methods, DTOs, mappers, validators, clients, and tests may be impacted
+* what new or changed logic is required
+* what risks, dependencies, and open questions exist
+* how to implement the change safely and clearly
+
+This skill is intended for endpoint-level or feature-level enhancement analysis.
+
+Required user input
+
+Before starting the analysis, check whether the user has provided enough information.
+
+The user should provide at least:
+
+* target endpoint, feature name, operation name, or business flow
+* new requirement or enhancement description
+* expected behavior after the enhancement
+* any known constraints, for example backward compatibility, no API contract change, no database change, or specific downstream provider behavior
+
+If the endpoint or feature is missing, ask:
+
+“Which endpoint, feature, or business flow should I analyze for this enhancement?”
+
+If the new requirement is missing or unclear, ask:
+
+“What is the new requirement or expected behavior for this enhancement?”
+
+If both are provided, proceed with the analysis.
+
+Scope rule
+
+This skill is enhancement-driven.
+
+Do not analyze the entire codebase from scratch.
+
+Start from the user-provided endpoint, feature, operation, service method, or requirement.
+
+Trace only the relevant code paths needed to assess the enhancement impact.
+
+If multiple candidate endpoints or flows are found, list the candidates and ask the user to confirm the target scope before doing detailed analysis.
+
+Apply this skill when
+
+Use this skill when the user asks to:
+
+* analyze the impact of a new requirement
+* identify where to implement an enhancement
+* compare new requirements against existing code logic
+* determine which classes, methods, DTOs, mappers, validators, or clients need changes
+* assess request or response contract changes
+* assess downstream System API impact
+* assess validation, mapping, business rule, or error-handling changes
+* prepare technical design notes for an enhancement
+* produce implementation guidance for developers
+* identify test cases required for a change
+
+Do not apply this skill when
+
+Do not use this skill when the user only wants:
+
+* a pure explanation of existing mapping logic
+* a general code review
+* broad architecture exploration
+* performance tuning
+* deployment analysis
+* database design
+* frontend-only behavior
+* generic coding advice
+
+Unless those topics are directly related to the requested enhancement.
+
+Analysis approach
+
+Follow this enhancement-first process.
+
+1. Understand the new requirement
+
+Summarize the requirement in your own words.
+
+Identify:
+
+* requested business behavior
+* triggering condition
+* input changes
+* output changes
+* validation changes
+* mapping changes
+* downstream System API changes
+* error-handling changes
+* backward compatibility requirements
+* assumptions and unclear points
+
+Do not invent missing requirements. If something is unclear, mark it as an open question.
+
+2. Locate the relevant existing flow
+
+Starting from the user-provided endpoint, feature, operation, or service method, identify:
+
+* controller or handler
+* request DTO
+* response DTO
+* main service method
+* validators
+* mappers or assemblers
+* downstream client or adapter classes
+* configuration usage
+* database or cache access
+* error-handling components
+* test classes
+
+Focus only on code paths relevant to the enhancement.
+
+3. Compare current behavior with required behavior
+
+Create a gap analysis between existing behavior and new required behavior.
+
+For each gap, document:
+
+* existing behavior
+* required behavior
+* impacted code location
+* recommended change
+* risk or dependency
+
+4. Identify enhancement points
+
+For each required change, identify exactly where the enhancement should happen.
+
+Classify enhancement points as:
+
+* Controller / handler change
+* Request DTO change
+* Response DTO change
+* Validation change
+* Business rule change
+* Mapping change
+* Downstream System API request change
+* Downstream System API response handling change
+* Error mapping change
+* Configuration change
+* Database or cache change
+* Logging / audit change
+* Unit test change
+* Integration test change
+* Contract test change
+* Documentation change
+
+5. Analyze request impact
+
+Check whether the enhancement requires changes to:
+
+* request body fields
+* headers
+* path parameters
+* query parameters
+* request validation
+* default values
+* backward compatibility
+* OpenAPI / Swagger contract
+* consumer expectations
+
+If the public request contract changes, clearly call it out as a contract impact.
+
+6. Analyze response impact
+
+Check whether the enhancement requires changes to:
+
+* response fields
+* response status
+* error response schema
+* field derivation logic
+* masking or suppression logic
+* null handling
+* default values
+* OpenAPI / Swagger contract
+* consumer expectations
+
+If the public response contract changes, clearly call it out as a contract impact.
+
+7. Analyze downstream System API impact
+
+Check whether the enhancement requires:
+
+* calling a new downstream System API
+* changing an existing System API request
+* using additional fields from an existing System API response
+* changing call order
+* adding conditional calls
+* adding fallback logic
+* handling new provider error codes
+* adding timeout or retry behavior
+* updating client models or adapters
+
+If the downstream provider behavior is unclear, mark it as an open question.
+
+8. Analyze mapping and derivation changes
+
+For any changed mapping logic, document the enhancement in detail.
+
+For simple changes, one sentence is acceptable.
+
+For complex derivation logic, use bullet points.
+
+Document:
+
+* source fields
+* target fields
+* source location
+* transformation steps
+* condition checks
+* priority order
+* fallback behavior
+* null handling
+* default values
+* example input and output, where useful
+
+Do not write vague statements such as “update mapping logic” or “apply business rules.”
+
+9. Analyze error handling and edge cases
+
+Check whether the enhancement affects:
+
+* validation failure behavior
+* missing field behavior
+* invalid value behavior
+* downstream failure behavior
+* partial response behavior
+* null or empty response behavior
+* timeout behavior
+* fallback behavior
+* error code mapping
+* consumer-facing error messages
+
+Call out any missing error handling.
+
+10. Identify tests required
+
+Recommend test coverage for:
+
+* unit tests
+* mapper tests
+* validator tests
+* service tests
+* downstream client tests
+* integration tests
+* contract tests
+* regression tests
+* negative test cases
+* boundary test cases
+
+Tie each test recommendation to a specific enhancement point.
+
+Required final output
+
+Return the final enhancement analysis as one single self-contained HTML document.
+
+Do not return plain Markdown as the final output.
+
+The HTML must be readable when opened directly in a browser.
+
+Use inline CSS inside a <style> block.
+
+Do not reference external CSS, JavaScript, images, or fonts.
+
+Required HTML sections
+
+The HTML document must contain these sections:
+
+1. Enhancement Summary
+2. Requirement Understanding
+3. Target Endpoint / Flow
+4. Existing Behavior Summary
+5. Gap Analysis
+6. Impacted Components
+7. Recommended Enhancement Points
+8. Request Contract Impact
+9. Response Contract Impact
+10. Downstream System API Impact
+11. Mapping and Derivation Changes
+12. Error and Edge-Case Impact
+13. Implementation Plan
+14. Test Impact
+15. Risks and Recommendations
+16. Open Questions
+
+HTML template
+
+Use this template and populate it with the enhancement-specific analysis.
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Endpoint Enhancement Impact Analysis</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
+      margin: 32px;
+      color: #222;
+    }
+    h1, h2, h3 {
+      color: #1f2937;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+    }
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #f3f4f6;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    pre {
+      background: #f3f4f6;
+      padding: 12px;
+      overflow-x: auto;
+      border-radius: 6px;
+    }
+    .note {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .warning {
+      background: #fff7ed;
+      border-left: 4px solid #f97316;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .risk {
+      background: #fef2f2;
+      border-left: 4px solid #ef4444;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .success {
+      background: #f0fdf4;
+      border-left: 4px solid #22c55e;
+      padding: 12px;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+<h1>Endpoint Enhancement Impact Analysis</h1>
+<section>
+  <h2>1. Enhancement Summary</h2>
+  <table>
+    <tr>
+      <th>Item</th>
+      <th>Details</th>
+    </tr>
+    <tr>
+      <td>Enhancement / Requirement</td>
+      <td><!-- New requirement summary --></td>
+    </tr>
+    <tr>
+      <td>Target Endpoint / Feature</td>
+      <td><!-- Endpoint or feature name --></td>
+    </tr>
+    <tr>
+      <td>Overall Impact Level</td>
+      <td><!-- Low / Medium / High --></td>
+    </tr>
+    <tr>
+      <td>Contract Change</td>
+      <td><!-- Yes / No / To be confirmed --></td>
+    </tr>
+    <tr>
+      <td>Downstream API Impact</td>
+      <td><!-- Yes / No / To be confirmed --></td>
+    </tr>
+  </table>
+</section>
+<section>
+  <h2>2. Requirement Understanding</h2>
+  <ul>
+    <li><strong>Business requirement:</strong> <!-- requirement --></li>
+    <li><strong>Expected behavior:</strong> <!-- expected behavior --></li>
+    <li><strong>Trigger condition:</strong> <!-- condition --></li>
+    <li><strong>Known constraints:</strong> <!-- constraints --></li>
+    <li><strong>Assumptions:</strong> <!-- assumptions --></li>
+  </ul>
+</section>
+<section>
+  <h2>3. Target Endpoint / Flow</h2>
+  <table>
+    <tr>
+      <th>Item</th>
+      <th>Details</th>
+    </tr>
+    <tr>
+      <td>HTTP Method and Path</td>
+      <td><!-- method and path --></td>
+    </tr>
+    <tr>
+      <td>Controller / Handler</td>
+      <td><code><!-- controller or handler --></code></td>
+    </tr>
+    <tr>
+      <td>Main Service Method</td>
+      <td><code><!-- service method --></code></td>
+    </tr>
+    <tr>
+      <td>Request DTO</td>
+      <td><code><!-- request DTO --></code></td>
+    </tr>
+    <tr>
+      <td>Response DTO</td>
+      <td><code><!-- response DTO --></code></td>
+    </tr>
+  </table>
+</section>
+<section>
+  <h2>4. Existing Behavior Summary</h2>
+  <ul>
+    <li><!-- Existing behavior point 1 --></li>
+    <li><!-- Existing behavior point 2 --></li>
+    <li><!-- Existing behavior point 3 --></li>
+  </ul>
+</section>
+<section>
+  <h2>5. Gap Analysis</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Area</th>
+        <th>Current Behavior</th>
+        <th>Required Behavior</th>
+        <th>Gap</th>
+        <th>Recommended Change</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- Area --></td>
+        <td><!-- Current behavior --></td>
+        <td><!-- Required behavior --></td>
+        <td><!-- Gap --></td>
+        <td><!-- Recommended change --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>6. Impacted Components</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Component Type</th>
+        <th>File / Class / Method</th>
+        <th>Current Responsibility</th>
+        <th>Expected Change</th>
+        <th>Impact Level</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- Controller / Service / Mapper / DTO / Client / Test --></td>
+        <td><code><!-- file / class / method --></code></td>
+        <td><!-- current responsibility --></td>
+        <td><!-- expected change --></td>
+        <td><!-- Low / Medium / High --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>7. Recommended Enhancement Points</h2>
+  <ol>
+    <li>
+      <strong><!-- Enhancement point title --></strong>
+      <ul>
+        <li><strong>Location:</strong> <code><!-- class / method --></code></li>
+        <li><strong>Change needed:</strong> <!-- change --></li>
+        <li><strong>Reason:</strong> <!-- reason --></li>
+        <li><strong>Implementation note:</strong> <!-- implementation note --></li>
+      </ul>
+    </li>
+  </ol>
+</section>
+<section>
+  <h2>8. Request Contract Impact</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Request Field / Input</th>
+        <th>Change Type</th>
+        <th>Required?</th>
+        <th>Backward Compatibility</th>
+        <th>Validation Impact</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code><!-- request field --></code></td>
+        <td><!-- Add / Modify / Remove / No change --></td>
+        <td><!-- Yes / No --></td>
+        <td><!-- Compatible / Breaking / To be confirmed --></td>
+        <td><!-- validation impact --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>9. Response Contract Impact</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Response Field</th>
+        <th>Change Type</th>
+        <th>Derivation / Mapping Impact</th>
+        <th>Backward Compatibility</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code><!-- response field --></td>
+        <td><!-- Add / Modify / Remove / No change --></td>
+        <td><!-- derivation or mapping impact --></td>
+        <td><!-- Compatible / Breaking / To be confirmed --></td>
+        <td><!-- notes --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>10. Downstream System API Impact</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>System API</th>
+        <th>Client / Adapter</th>
+        <th>Impact Type</th>
+        <th>Required Change</th>
+        <th>Dependency / Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- system API --></td>
+        <td><code><!-- client / adapter --></code></td>
+        <td><!-- Request / Response / New call / Error handling / No change --></td>
+        <td><!-- required change --></td>
+        <td><!-- dependency / risk --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>11. Mapping and Derivation Changes</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Target Field / Behavior</th>
+        <th>Source Fields</th>
+        <th>Current Logic</th>
+        <th>Required Logic</th>
+        <th>Logic / Rule</th>
+        <th>Impact Level</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code><!-- target field --></code></td>
+        <td>
+          <ul>
+            <li><code><!-- source field 1 --></code></li>
+            <li><code><!-- source field 2 --></code></li>
+          </ul>
+        </td>
+        <td><!-- current logic --></td>
+        <td><!-- required logic --></td>
+        <td>
+          <ul>
+            <li><!-- Step-by-step derivation rule --></li>
+            <li><!-- Condition / priority / fallback rule --></li>
+            <li><!-- Null handling --></li>
+          </ul>
+        </td>
+        <td><!-- Low / Medium / High --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>12. Error and Edge-Case Impact</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Scenario</th>
+        <th>Current Behavior</th>
+        <th>Required Behavior</th>
+        <th>Recommended Change</th>
+        <th>Test Required</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- missing field / downstream failure / null value --></td>
+        <td><!-- current behavior --></td>
+        <td><!-- required behavior --></td>
+        <td><!-- recommended change --></td>
+        <td><!-- yes / no --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>13. Implementation Plan</h2>
+  <ol>
+    <li><!-- Step 1 --></li>
+    <li><!-- Step 2 --></li>
+    <li><!-- Step 3 --></li>
+    <li><!-- Step 4 --></li>
+  </ol>
+</section>
+<section>
+  <h2>14. Test Impact</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Test Type</th>
+        <th>Test Target</th>
+        <th>Scenario</th>
+        <th>Expected Result</th>
+        <th>Priority</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><!-- Unit / Integration / Contract / Regression --></td>
+        <td><code><!-- class / method / endpoint --></code></td>
+        <td><!-- scenario --></td>
+        <td><!-- expected result --></td>
+        <td><!-- High / Medium / Low --></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>15. Risks and Recommendations</h2>
+  <div class="risk">
+    <strong>Risk:</strong> <!-- risk description -->
+  </div>
+  <div class="note">
+    <strong>Recommendation:</strong> <!-- recommendation -->
+  </div>
+</section>
+<section>
+  <h2>16. Open Questions</h2>
+  <ul>
+    <li><!-- open question 1 --></li>
+    <li><!-- open question 2 --></li>
+  </ul>
+</section>
+</body>
+</html>
+
+Style rules
+
+* Focus on enhancement impact, not only current-state explanation.
+* Be specific about where changes should happen.
+* Use class names, method names, DTO names, mapper names, validator names, and client names where visible.
+* Use tables for impact analysis.
+* Use bullet points for detailed derivation logic.
+* Use <code> for field names, class names, method names, constants, and endpoint paths.
+* Use <pre><code> for JSON examples if request or response payload examples are needed.
+* Distinguish confirmed code behavior from assumptions.
+* Mark unclear requirement details as open questions.
+* Do not invent business rules that are not present in the requirement or code.
+* Keep the output suitable for a technical design or developer handover document.
+
+What not to do
+
+Do not:
+
+* only explain existing logic without identifying enhancement points
+* analyze the entire codebase without scope
+* proceed when both the target flow and requirement are missing
+* suggest broad refactoring unless required by the enhancement
+* change public API contracts silently
+* ignore backward compatibility
+* ignore validation impact
+* ignore error-handling impact
+* ignore downstream System API impact
+* ignore test impact
+* provide vague statements such as “update service logic” or “change mapper”
+* produce plain Markdown as the final enhancement analysis
+
+Success criteria
+
+A good analysis should allow the development team to understand:
+
+* what the new requirement is
+* what the current behavior is
+* what gap exists
+* which components are impacted
+* where the enhancement should be implemented
+* what request, response, mapping, validation, downstream, and error-handling changes are needed
+* what tests should be added or updated
+* what risks and open questions should be clarified before implementation
