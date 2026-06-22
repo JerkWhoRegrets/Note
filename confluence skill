@@ -1,0 +1,301 @@
+Confluence Data Mapping Skill
+
+Name
+
+Confluence Data Mapping Generator
+
+Description
+
+Use this skill when the user provides:
+
+* An existing Confluence page
+* Two RAML or YAML files
+* A request to create or update a data mapping table based on an existing Confluence table format
+
+This skill creates a data mapping table by comparing fields from the first RAML/YAML file against fields from the second RAML/YAML file. The mapping must follow the structure of a selected existing table from the provided Confluence page.
+
+The skill must not create or update the Confluence page until the user explicitly approves the proposed mapping table.
+
+Objective
+
+Generate a Confluence-compatible data mapping table based on an existing table format from the provided Confluence page.
+
+The mapping should identify likely one-to-one field relationships between the two provided RAML/YAML files.
+
+Required Inputs
+
+The user must provide:
+
+1. A Confluence page or page identifier
+2. Two RAML or YAML files
+3. Confirmation of which existing Confluence table should be used as the table template
+
+Expected Tool Capabilities
+
+Use available tools to:
+
+1. Read the provided Confluence page
+2. List all tables on the Confluence page
+3. Read the selected table structure
+4. Parse both RAML/YAML files
+5. Generate a proposed mapping table
+6. Ask the user to review and approve the mapping
+7. Create or update the Confluence table only after approval
+
+Workflow
+
+Step 1: Read the Confluence Page
+
+Read the provided Confluence page and identify all tables.
+
+List the available tables for the user. For each table, provide a short description based on its headers and visible content.
+
+Ask the user:
+
+Which table should I use as the template for the new data mapping table?
+
+Do not continue with table generation until the user selects a table.
+
+⸻
+
+Step 2: Read the Selected Table Format
+
+After the user selects a table, inspect its structure.
+
+Capture:
+
+* Column names
+* Column order
+* Required fields
+* Formatting style
+* Example row structure
+* Any special columns such as notes, comments, transformation rules, mandatory flags, confidence, or review status
+
+The generated mapping table must follow this selected table format.
+
+⸻
+
+Step 3: Parse the Two RAML/YAML Files
+
+Parse both files and extract field-level information.
+
+For each field, capture where available:
+
+* Field name
+* Full field path
+* Data type
+* Required/optional status
+* Description
+* Comments
+* Example value
+* Enum values
+* Validation rules
+* Parent object
+* Request/response context
+
+Treat the first RAML/YAML file as the source/consumer-side structure.
+
+Treat the second RAML/YAML file as the target/system-side structure.
+
+If the user defines the direction differently, follow the user’s direction.
+
+⸻
+
+Step 4: Perform Initial Field Matching
+
+Create candidate mappings using this priority order:
+
+1. Exact field-name match
+2. Strong field-name similarity
+3. Similar full path or parent object context
+4. Similar comments or descriptions
+5. Similar data type and business meaning
+
+Do not create a confirmed mapping based only on weak similarity.
+
+Do not infer business logic that is not present in the RAML/YAML files or the selected Confluence table.
+
+⸻
+
+Step 5: Classify Mapping Confidence
+
+Each mapping must be classified as one of the following:
+
+High Confidence
+
+Use only when:
+
+* Field names are identical or nearly identical
+* Descriptions/comments clearly describe the same business meaning
+* Data types are compatible
+* Parent context supports the match
+
+Medium Confidence
+
+Use when:
+
+* Field names are similar but not identical
+* Descriptions/comments partially support the match
+* Data types are compatible
+* Some review is still needed
+
+Low Confidence
+
+Use when:
+
+* Field names are different
+* Descriptions/comments are vague
+* The business meaning may be related but is not clear
+* Human confirmation is required
+
+Unmapped
+
+Use when:
+
+* No reliable target field can be found
+* The source field has no clear equivalent
+* The match would require unsupported assumptions
+
+⸻
+
+Step 6: Ask for Clarification
+
+If a mapping is medium confidence, low confidence, or unclear, ask the user before treating it as final.
+
+Use questions such as:
+
+* “Can you confirm whether sourceField should map to targetField?”
+* “These fields have similar names, but the comments are not clear. Should I map them?”
+* “I found no reliable target field for sourceField. Should this remain unmapped?”
+* “Is this field derived, hardcoded, ignored, or mapped from another source?”
+
+Do not silently decide unclear mappings.
+
+⸻
+
+Step 7: Produce a Draft Mapping Table
+
+Create a draft table using the same column structure as the selected Confluence table.
+
+If the selected table does not already include review-related columns, add review information only if appropriate and clearly separated, for example:
+
+* Confidence
+* Review Required
+* Open Question
+
+The draft table should clearly identify:
+
+* Confirmed mappings
+* Proposed mappings
+* Unmapped fields
+* Fields requiring user confirmation
+
+Do not update the Confluence page yet.
+
+Ask the user:
+
+Please review the proposed mapping table. Should I create or update the Confluence page with this table?
+
+⸻
+
+Step 8: Update or Create the Confluence Table
+
+Only after the user explicitly approves, create or update the table in the existing Confluence page.
+
+Before updating, confirm:
+
+* Whether to replace an existing table
+* Whether to append a new table
+* Where the table should be inserted
+* Whether the table title should be changed
+
+Do not overwrite existing content without explicit confirmation.
+
+⸻
+
+Mapping Rules
+
+Follow these rules strictly:
+
+1. Do not make assumptions.
+2. Do not invent mappings.
+3. Do not infer transformation logic unless it is clearly stated in the files or Confluence page.
+4. Do not update Confluence without user approval.
+5. Do not treat name similarity alone as final proof.
+6. Use comments and descriptions to validate field-name matches.
+7. Mark unclear mappings as requiring review.
+8. Preserve the selected Confluence table format.
+9. Keep unmapped fields visible.
+10. Ask the user when the mapping is uncertain.
+
+Output Requirements
+
+The skill should produce:
+
+1. A list of tables found on the Confluence page
+2. A request for the user to choose the table template
+3. A parsed field summary from both RAML/YAML files
+4. A draft mapping table
+5. A list of unclear mappings and questions
+6. A final Confluence table only after approval
+
+Recommended Draft Table Columns
+
+Use the selected Confluence table structure first.
+
+If no clear mapping table structure exists, use this fallback format:
+
+Source Field Path	Source Field Name	Source Type	Source Description	Target Field Path	Target Field Name	Target Type	Target Description	Mapping Type	Confidence	Review Required	Notes / Open Questions
+
+Mapping Type Values
+
+Use one of the following:
+
+* One-to-one
+* Renamed field
+* Derived
+* Hardcoded
+* Ignored
+* Not mapped
+* Requires confirmation
+
+Do not use Derived, Hardcoded, or Ignored unless the source files, Confluence page, or user explicitly confirms it.
+
+User Approval Gate
+
+Before modifying Confluence, always ask:
+
+I have prepared the draft mapping table. Do you want me to update the Confluence page now?
+
+Only continue if the user clearly says yes.
+
+What Not To Do
+
+Do not:
+
+* Update the Confluence page immediately
+* Replace an existing table without confirmation
+* Guess mappings based on business knowledge alone
+* Hide unmapped fields
+* Remove fields from either RAML/YAML file
+* Treat uncertain mappings as confirmed
+* Change the selected table structure without explaining why
+* Create transformation rules that are not supported by the provided material
+
+Example Interaction
+
+User provides:
+
+* Confluence page
+* Source RAML/YAML
+* Target RAML/YAML
+
+Assistant should respond:
+
+1. “I found the following tables on the Confluence page…”
+2. “Which table should I use as the mapping template?”
+3. After user selects the table: “I will use this table structure.”
+4. Generate the draft mapping table.
+5. Highlight unclear mappings.
+6. Ask for review and approval.
+7. Only after approval, update or create the Confluence table.
