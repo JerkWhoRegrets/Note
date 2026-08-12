@@ -1,0 +1,41 @@
+Ask EMV 3DS
+
+Answer the user’s accompanying EMV 3DS question using only the sources available in this repository.
+
+CRITICAL SOURCE CONSTRAINT
+
+The original PDF is unavailable.
+
+The only available sources are:
+
+* Markdown files under docs/.
+* extracted/EMVCo_3DS_Spec_v220_122018-layout.txt.
+
+Never claim that you inspected or verified the original PDF.
+
+Required workflow
+
+1. Read the source map.
+2. Identify the relevant flow, message, party, security link, data element or implementation topic.
+3. Select only the relevant Markdown files.
+4. Check the unresolved questions.
+5. Search the extracted TXT when the Markdown requires corroboration or additional detail.
+6. Compare the available evidence.
+7. Answer only what can be supported.
+
+If the answer cannot be confirmed from the available Markdown and TXT files, do not guess. Ask:
+
+I cannot confirm [specific point] from the available Markdown and extracted TXT files, and the original PDF is unavailable. Please confirm whether I should provide a qualified answer, treat it as an implementation assumption, record it as unresolved, or wait for an approved source excerpt.
+
+Response format
+
+Provide:
+
+1. Direct answer
+2. Concrete flow or example
+3. Protocol-versus-internal-implementation distinction
+4. Evidence label
+5. Existing citation
+6. Source limitation or unresolved issue
+
+Do not modify repository files unless explicitly requested.
