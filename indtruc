@@ -1,0 +1,98 @@
+EMV 3DS Repository Instructions
+
+CRITICAL SOURCE CONSTRAINT
+
+THE ORIGINAL PDF IS NOT AVAILABLE IN THIS REPOSITORY.
+
+The only available technical sources are:
+
+1. Markdown files under docs/.
+2. The extracted text file:
+    extracted/EMVCo_3DS_Spec_v220_122018-layout.txt
+
+Never:
+
+* claim that the original PDF was opened or inspected;
+* attempt to locate a PDF in the repository;
+* state that a conclusion was independently verified against the PDF;
+* invent content that cannot be confirmed from the Markdown or TXT files;
+* infer PDF page numbers from TXT line numbers.
+
+Existing PDF-page and requirement citations in the Markdown files were produced during previous analysis. They may be repeated as inherited citations, but they cannot be independently reverified in this repository.
+
+Mandatory confirmation rule
+
+Before giving a definitive technical conclusion:
+
+1. Search the relevant Markdown files.
+2. Search the extracted TXT when additional confirmation is required.
+3. Compare the available evidence.
+4. If the conclusion cannot be confirmed, stop and ask the user how to proceed.
+
+Ask the user when:
+
+* neither the Markdown nor TXT supports the conclusion;
+* the Markdown and TXT contradict each other;
+* an expected requirement, field or value is missing;
+* the answer depends on a diagram, figure or table structure that was not reliably extracted;
+* an existing citation cannot be correlated with the available TXT;
+* the answer would require an unsupported assumption;
+* the question depends on payment-scheme, vendor, regulatory or certification requirements not included in the repository.
+
+Use this clarification:
+
+I cannot confirm [specific point] from the available Markdown and extracted TXT files, and the original PDF is unavailable. Please confirm whether I should:
+
+1. provide a qualified answer based on the available evidence;
+2. treat the point as an issuer implementation assumption;
+3. record it as unresolved; or
+4. wait for an approved source excerpt.
+
+User confirmation is a project decision, not source verification. Never convert a user-approved assumption into a normative EMV 3DS requirement.
+
+Source-routing rules
+
+Begin with docs/00-source-map.md.
+
+Use:
+
+* docs/acs-implementation-guide.md for issuer ACS architecture.
+* docs/message-route-matrix.md for sender, receiver and endpoint questions.
+* docs/security-matrix.md for TLS, mTLS, certificates and payload protection.
+* docs/verification-and-otp-design.md for OTP, challenge, resend, retry and verification.
+* docs/traceability-matrix.md for requirement and citation lookup.
+* docs/analysis-status.md for previous analysis and verification status.
+* docs/unresolved-questions.md for known ambiguities.
+* Relevant numbered Markdown files for detailed flows and data elements.
+
+Use the extracted TXT only to:
+
+* find an exact phrase;
+* locate a requirement number;
+* corroborate a message or field definition;
+* inspect surrounding source-derived text;
+* investigate a possible conflict.
+
+Search the TXT narrowly. Do not load or quote the entire file.
+
+Evidence labels
+
+Label important conclusions as:
+
+* Verified Markdown
+* Markdown corroborated by extracted text
+* Extracted-text evidence only
+* Issuer implementation consideration
+* Scheme or vendor dependency
+* Unresolved
+
+Accuracy requirements
+
+* Preserve shall, should and may.
+* Do not invent protocol messages, fields, routes, status values, timers or security requirements.
+* Distinguish EMV 3DS messages from internal issuer operations.
+* Distinguish application messages from HTTP transport.
+* Distinguish app, browser, OOB, decoupled and 3RI flows.
+* Use only citations already present in the Markdown or clearly recoverable from the TXT.
+* Explicitly state when a conclusion cannot be confirmed.
+* Do not modify repository files unless the user explicitly requests changes.
